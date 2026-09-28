@@ -142,13 +142,13 @@
 .show-5 { transform: rotateX(-112deg) rotateY(28deg) rotateZ(-3deg); }
 .show-6 { transform: rotateX(68deg) rotateY(28deg) rotateZ(3deg); }
 
-/* Continuous Smooth 3D Idle Floating */
+/* Continuous Smooth 3D Idle Rotation */
 @keyframes diceFloatingIdle {
   0%, 100% {
-    transform: translateY(0px) rotateX(-20deg) rotateY(28deg) rotateZ(-3deg);
+    transform: rotateX(-16deg) rotateY(28deg);
   }
   50% {
-    transform: translateY(-14px) rotateX(-26deg) rotateY(38deg) rotateZ(3deg);
+    transform: rotateX(-20deg) rotateY(34deg);
   }
 }
 
@@ -156,46 +156,31 @@
   animation: diceFloatingIdle 4s ease-in-out infinite;
 }
 
-/* Showcase Continuous 360-degree 3D Spin (For Hero / Display) */
+/* Showcase Smooth Steady 360-degree 3D Turntable Spin (In Place, No Up/Down Bobbing) */
 @keyframes diceShowcaseSpin {
   0% {
-    transform: translateY(0px) rotateX(-22deg) rotateY(0deg) rotateZ(2deg);
-  }
-  50% {
-    transform: translateY(-16px) rotateX(-26deg) rotateY(180deg) rotateZ(-3deg);
+    transform: rotateX(-18deg) rotateY(0deg) rotateZ(0deg);
   }
   100% {
-    transform: translateY(0px) rotateX(-22deg) rotateY(360deg) rotateZ(2deg);
+    transform: rotateX(-18deg) rotateY(360deg) rotateZ(0deg);
   }
 }
 
 .dice-showcase-spin {
-  animation: diceShowcaseSpin 9s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+  animation: diceShowcaseSpin 8s linear infinite;
 }
 
 /* Continuous Tumbling Animation when roll is in progress */
 @keyframes rollingTumble3D {
   0% { transform: translateY(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
-  25% { transform: translateY(-35px) rotateX(450deg) rotateY(270deg) rotateZ(180deg); }
-  50% { transform: translateY(10px) rotateX(900deg) rotateY(540deg) rotateZ(360deg); }
-  75% { transform: translateY(-30px) rotateX(1350deg) rotateY(810deg) rotateZ(540deg); }
+  25% { transform: translateY(-25px) rotateX(450deg) rotateY(270deg) rotateZ(180deg); }
+  50% { transform: translateY(5px) rotateX(900deg) rotateY(540deg) rotateZ(360deg); }
+  75% { transform: translateY(-20px) rotateX(1350deg) rotateY(810deg) rotateZ(540deg); }
   100% { transform: translateY(0) rotateX(1800deg) rotateY(1080deg) rotateZ(720deg); }
 }
 
 .rolling-active {
-  animation: rollingTumble3D 1.3s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
-}
-
-/* Floor Shadow with Scale Pulse */
-@keyframes shadowPulse {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 0.7;
-  }
-  50% {
-    transform: scale(0.75);
-    opacity: 0.35;
-  }
+  animation: rollingTumble3D 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
 }
 
 .dice-floor-shadow {
@@ -205,7 +190,6 @@
   border-radius: 50%;
   filter: blur(5px);
   margin: 14px auto 0 auto;
-  animation: shadowPulse 4s ease-in-out infinite;
 }
 
 /* Metallic Golden Pips */

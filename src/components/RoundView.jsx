@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useWeb3 } from '../context/Web3Context';
 import Dice3D from './Dice3D';
-import RecoverySecretModal from './RecoverySecretModal';
 import {
   ArrowLeft,
   Lock,
@@ -28,7 +27,7 @@ import { ethers } from 'ethers';
 import confetti from 'canvas-confetti';
 import { API_BASE_URL } from '../config/api';
 
-export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
+export default function RoundView({ roundId, onBack, initialNumber = null }) {
   const {
     account,
     connectWallet,
@@ -48,14 +47,21 @@ export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
   const [round, setRound] = useState(null);
   const [playerEntry, setPlayerEntry] = useState(null);
   const [roundPlayers, setRoundPlayers] = useState([]);
-  const [selectedNumber, setSelectedNumber] = useState(initialNumber || 4);
+  const [selectedNumber, setSelectedNumber] = useState(
+    initialNumber && initialNumber >= 1 && initialNumber <= 6 ? initialNumber : null
+  );
   const [loading, setLoading] = useState(false);
   const [txPending, setTxPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
-  const [showSecretModal, setShowSecretModal] = useState(false);
   const [activeSecretData, setActiveSecretData] = useState(null);
   const [now, setNow] = useState(Math.floor(Date.now() / 1000));
+
+  // Automated progression guards
+  const [autoLockTriggered, setAutoLockTriggered] = useState(false);
+  const [autoRevealTriggered, setAutoRevealTriggered] = useState(false);
+  const [autoRollTriggered, setAutoRollTriggered] = useState(false);
+  const [autoClaimTriggered, setAutoClaimTriggered] = useState(false);
 
   // Ticker for timers
   useEffect(() => {
@@ -63,15 +69,25 @@ export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
     return () => clearInterval(t);
   }, []);
 
-  // Auto-poll in state 3 (VRF rolling) or active reveals
+  // Continuous live sync across all states (every 2.5s, fast 1.5s during VRF roll)
   useEffect(() => {
-    if (round && (round.state === 3 || round.state === 2)) {
+    if (roundId) {
+      loadRound();
+      const intervalMs = round?.state === 3 ? 1500 : 2500;
       const poll = setInterval(() => {
         loadRound();
-      }, 3500);
+      }, intervalMs);
       return () => clearInterval(poll);
     }
-  }, [round?.state, round?.revealedCount, round?.playerCount]);
+  }, [roundId, round?.state, account, diceContract]);
+
+  // Instant refresh when wallet connects/changes
+  useEffect(() => {
+    if (account) {
+      loadRound();
+      refreshBalances();
+    }
+  }, [account]);
 
   // Confetti when user wins
   useEffect(() => {
@@ -193,12 +209,6 @@ export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
       }
     }
   };
-
-  useEffect(() => {
-    loadRound();
-    const interval = setInterval(loadRound, 3000);
-    return () => clearInterval(interval);
-  }, [diceContract, roundId, account]);
 
   // Trigger celebration confetti on win
   useEffect(() => {
@@ -558,6 +568,61 @@ export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // =========================================================================
+  // AUTOMATED GAME FLOW HOOKS (Auto-Start, Auto-Reveal, Auto-Roll, Auto-Claim)
+  // =========================================================================
+
+  // 1. Auto-Lock / Auto-Start: Trigger when max players reached (e.g. 2/2) OR join timer reaches 0
+  useEffect(() => {
+    if (!round || round.state !== 0 || !account || !diceContract || loading || txPending || autoLockTriggered) return;
+
+    const maxReached = round.playerCount >= round.maxPlayers && round.playerCount >= round.minPlayers;
+    const timerElapsed = round.playerCount >= round.minPlayers && joinSecondsLeft === 0;
+
+    if (maxReached || timerElapsed) {
+      setAutoLockTriggered(true);
+      console.log("[AutoDuel] Max players joined or timer expired! Auto-locking round & starting game duel...");
+      handleLockRound();
+    }
+  }, [round?.state, round?.playerCount, round?.maxPlayers, round?.minPlayers, joinSecondsLeft, account, diceContract, txPending, loading, autoLockTriggered]);
+
+  // 2. Auto-Reveal: When round enters Reveal Phase (State 2), auto-reveal player choice without manual clicks
+  useEffect(() => {
+    if (!round || round.state !== 2 || !account || !diceContract || loading || txPending || autoRevealTriggered) return;
+
+    if (playerEntry?.hasCommitted && !playerEntry.revealed && activeSecretData) {
+      setAutoRevealTriggered(true);
+      console.log("[AutoDuel] Auto-revealing committed choice on-chain...");
+      handleReveal();
+    }
+  }, [round?.state, playerEntry?.hasCommitted, playerEntry?.revealed, activeSecretData, account, diceContract, txPending, loading, autoRevealTriggered]);
+
+  // 3. Auto-Roll: When all reveals are complete or reveal timer runs out, auto-trigger 3D dice roll
+  useEffect(() => {
+    if (!round || round.state !== 2 || !account || !diceContract || loading || txPending || autoRollTriggered) return;
+
+    const allRevealed = round.revealedCount >= round.playerCount && round.playerCount > 0;
+    const revealExpired = revealSecondsLeft === 0 && round.revealedCount > 0;
+
+    if (allRevealed || revealExpired) {
+      setAutoRollTriggered(true);
+      console.log("[AutoDuel] All reveals complete! Auto-dispatching 3D dice roll via Chainlink VRF...");
+      handleCloseReveal();
+    }
+  }, [round?.state, round?.revealedCount, round?.playerCount, revealSecondsLeft, account, diceContract, txPending, loading, autoRollTriggered]);
+
+  // 4. Auto-Claim: When round settled (State 4), auto-trigger bounty reward transfer to winner's wallet
+  useEffect(() => {
+    if (!round || round.state !== 4 || !account || !diceContract || loading || txPending || autoClaimTriggered) return;
+
+    const isWinner = playerEntry && playerEntry.revealed && Number(playerEntry.selectedNumber) === round.winningNumber;
+    if (isWinner && !playerEntry.claimed) {
+      setAutoClaimTriggered(true);
+      console.log("[AutoDuel] Winner matched! Auto-transferring reward bounty to winner wallet...");
+      handleClaim();
+    }
+  }, [round?.state, round?.winningNumber, playerEntry?.revealed, playerEntry?.selectedNumber, playerEntry?.claimed, account, diceContract, txPending, loading, autoClaimTriggered]);
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
       {/* Top Navigation */}
@@ -712,9 +777,21 @@ export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
                 <>
                   {/* Number Selector [1] [2] [3] [4] [5] [6] */}
                   <div>
-                    <label className="text-xs text-gray-400 font-semibold uppercase block mb-3">
-                      Choose Your Winning Number:
-                    </label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <Dices className="w-4 h-4 text-gold" />
+                        <span>Choose Your Lucky Number (1 – 6):</span>
+                      </label>
+                      {selectedNumber ? (
+                        <span className="text-xs font-mono font-bold text-crimson-light">
+                          ✓ Selected: #{selectedNumber}
+                        </span>
+                      ) : (
+                        <span className="text-xs font-mono text-gray-400">
+                          (Click a number below to select)
+                        </span>
+                      )}
+                    </div>
                     <div className="grid grid-cols-6 gap-2 sm:gap-3">
                       {[1, 2, 3, 4, 5, 6].map((num) => (
                         <button
@@ -783,20 +860,35 @@ export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
                           <span>✓ Allowance Confirmed</span>
                         </div>
                       )}
-                      <button
-                        onClick={handleCommit}
-                        disabled={loading || txPending}
-                        className="crimson-gradient-btn w-full py-4 rounded-xl font-bold text-white text-sm uppercase tracking-wider flex items-center justify-center gap-2"
-                      >
-                        {txPending ? (
-                          <span>Submitting Transaction...</span>
-                        ) : (
-                          <>
-                            <Lock className="w-4 h-4" />
-                            <span>{!isETH ? `Step 2: Join Arena (${entryFormatted})` : `Join Arena (${entryFormatted})`}</span>
-                          </>
-                        )}
-                      </button>
+                      {!selectedNumber ? (
+                        <button
+                          type="button"
+                          disabled={true}
+                          className="w-full py-4 rounded-xl font-heading font-black text-sm uppercase tracking-wider text-gray-400 bg-arena-surface border border-arena-border flex items-center justify-center gap-2 cursor-not-allowed opacity-75"
+                        >
+                          <Dices className="w-4 h-4 text-gold animate-pulse" />
+                          <span>Select Your Lucky Number (1 – 6) Above</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={handleCommit}
+                          disabled={loading || txPending}
+                          className="crimson-gradient-btn w-full py-4 rounded-xl font-bold text-white text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(225,29,72,0.5)]"
+                        >
+                          {txPending ? (
+                            <span>Submitting Transaction...</span>
+                          ) : (
+                            <>
+                              <Lock className="w-4 h-4" />
+                              <span>
+                                {!isETH
+                                  ? `Step 2: Join Arena with #${selectedNumber} (${entryFormatted})`
+                                  : `Lock Number #${selectedNumber} & Join (${entryFormatted})`}
+                              </span>
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
                   )}
                 </>
@@ -809,19 +901,14 @@ export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
                   <div>
                     <h5 className="font-heading text-lg font-bold text-white">Your Selection Is Locked</h5>
                     <p className="text-xs text-gray-400 max-w-sm mx-auto mt-1">
-                      You are entered in Round #{round.roundId}. When all players join or timer expires, you will be prompted to reveal your secret number.
+                      You are entered in Round #{round.roundId}. When {round.maxPlayers} fighters join or the join timer reaches 00:00, the match will automatically progress to reveal and 3D dice roll!
                     </p>
                   </div>
 
-                  {activeSecretData && (
-                    <button
-                      onClick={() => setShowSecretModal(true)}
-                      className="px-4 py-2 rounded-xl bg-arena-hover hover:bg-arena-border border border-arena-border text-gold text-xs font-bold inline-flex items-center gap-2"
-                    >
-                      <Lock className="w-3.5 h-3.5" />
-                      <span>View & Backup Recovery Secret</span>
-                    </button>
-                  )}
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>Number #{activeSecretData?.selectedNumber || selectedNumber || "?"} Cryptographically Protected</span>
+                  </div>
                 </div>
               )}
 
@@ -1259,11 +1346,11 @@ export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
           <div className="flex items-center gap-2">
             <Swords className="w-5 h-5 text-crimson-light" />
             <h4 className="font-heading text-lg font-black text-white">
-              DUEL FIGHTERS & SELECTIONS ({roundPlayers.length || round.playerCount} Players)
+              DUEL FIGHTERS ({round.playerCount} / {round.maxPlayers} Slots Filled)
             </h4>
           </div>
           <div className="text-xs font-mono text-gray-400">
-            {round.state === 0 && "Waiting for players to lock numbers"}
+            {round.state === 0 && (round.maxPlayers <= 2 ? "1v1 Duel Mode • Waiting for 2nd Fighter" : `Waiting for players (${round.playerCount}/${round.maxPlayers})`)}
             {(round.state === 1 || round.state === 2) && "Numbers being revealed on-chain"}
             {round.state === 3 && "3D Dice Rolling with Chainlink VRF"}
             {round.state === 4 && `Settled with Winning Dice #${round.winningNumber}!`}
@@ -1271,96 +1358,109 @@ export default function RoundView({ roundId, onBack, initialNumber = 4 }) {
           </div>
         </div>
 
-        {roundPlayers.length === 0 ? (
-          <div className="text-center py-6 text-xs text-gray-400 font-mono">
-            No fighter records found. Commit to join the duel.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {roundPlayers.map((p, idx) => {
-              const isCurrentUser = account && p.address.toLowerCase() === account.toLowerCase();
-              const isWinner = round.state === 4 && p.revealed && Number(p.selectedNumber) === round.winningNumber;
-
+        {/* Display strictly round.maxPlayers slots (e.g. 2 slots for 2-player game) */}
+        <div className={`grid gap-3.5 ${
+          (round.maxPlayers || 2) <= 2
+            ? "grid-cols-1 sm:grid-cols-2 max-w-2xl mx-auto"
+            : (round.maxPlayers || 2) <= 4
+            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+            : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+        }`}>
+          {Array.from({ length: round.maxPlayers || 2 }).map((_, idx) => {
+            const p = roundPlayers[idx] || null;
+            if (!p) {
               return (
                 <div
-                  key={p.address || idx}
-                  className={`p-4 rounded-2xl border transition-all ${
-                    isWinner
-                      ? "bg-gradient-to-r from-gold/20 via-amber-500/15 to-yellow-500/20 border-gold/70 shadow-[0_0_20px_rgba(245,158,11,0.35)] scale-[1.02]"
-                      : isCurrentUser
-                      ? "bg-arena-surface/90 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.15)]"
-                      : "bg-arena-surface/60 border-arena-border"
-                  }`}
+                  key={`empty_${idx}`}
+                  className="p-5 rounded-2xl border-2 border-dashed border-arena-border/60 bg-arena-surface/30 text-center flex flex-col items-center justify-center min-h-[140px]"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-mono text-gray-400 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                      <span>{p.address.slice(0, 6)}...{p.address.slice(-4)}</span>
-                      {isCurrentUser && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40">
-                          YOU
-                        </span>
-                      )}
+                  <div className="w-9 h-9 rounded-full bg-arena-surface border border-arena-border flex items-center justify-center text-gray-600 mb-2">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-mono font-bold text-gray-400">
+                    Fighter Slot #{idx + 1}
+                  </span>
+                  <span className="text-[11px] text-gray-500 font-mono mt-0.5">
+                    {idx === 1 && (round.maxPlayers || 2) === 2 ? "Waiting for 2nd Duelist..." : "Open for Challenger..."}
+                  </span>
+                </div>
+              );
+            }
+
+            const isCurrentUser = account && p.address.toLowerCase() === account.toLowerCase();
+            const isWinner = round.state === 4 && p.revealed && Number(p.selectedNumber) === round.winningNumber;
+
+            return (
+              <div
+                key={p.address || idx}
+                className={`p-4 rounded-2xl border transition-all ${
+                  isWinner
+                    ? "bg-gradient-to-r from-gold/20 via-amber-500/15 to-yellow-500/20 border-gold/70 shadow-[0_0_20px_rgba(245,158,11,0.35)] scale-[1.02]"
+                    : isCurrentUser
+                    ? "bg-arena-surface/90 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.15)]"
+                    : "bg-arena-surface/60 border-arena-border"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-mono text-gray-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                    <span>{p.address.slice(0, 6)}...{p.address.slice(-4)}</span>
+                    {isCurrentUser && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40">
+                        YOU
+                      </span>
+                    )}
+                  </span>
+                  {isWinner && (
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-gold text-gray-950 flex items-center gap-1">
+                      <Trophy className="w-3 h-3" />
+                      <span>WINNER</span>
                     </span>
-                    {isWinner && (
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-gold text-gray-950 flex items-center gap-1">
-                        <Trophy className="w-3 h-3" />
-                        <span>WINNER</span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between text-xs mt-2 pt-2 border-t border-arena-border/40">
+                  <span className="text-gray-400 text-[11px]">Selected Dice:</span>
+                  <span className="font-heading font-black">
+                    {round.state === 0 ? (
+                      <span className="text-gray-400 text-[11px] flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-gold" /> Hidden Hash
+                      </span>
+                    ) : p.revealed ? (
+                      <span className={`text-base flex items-center gap-1 ${isWinner ? "text-gold font-black scale-110" : "text-white"}`}>
+                        🎲 #{p.selectedNumber}
+                      </span>
+                    ) : round.state >= 2 && revealSecondsLeft === 0 ? (
+                      <span className="text-crimson-light text-[11px] flex items-center gap-1">
+                        ⚠️ Forfeited
+                      </span>
+                    ) : (
+                      <span className="text-amber-400 text-[11px] flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> Awaiting Reveal
+                      </span>
+                    )}
+                  </span>
+                </div>
+
+                {round.state === 4 && (
+                  <div className="mt-2 pt-1.5 border-t border-arena-border/40 text-[11px] font-mono">
+                    {isWinner ? (
+                      <span className="text-emerald-400 font-bold flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Matched #{round.winningNumber}! Wins Pool</span>
+                      </span>
+                    ) : (
+                      <span className="text-gray-500 flex items-center gap-1">
+                        <span>Did not match winning #{round.winningNumber}</span>
                       </span>
                     )}
                   </div>
-
-                  <div className="flex items-center justify-between text-xs mt-2 pt-2 border-t border-arena-border/40">
-                    <span className="text-gray-400 text-[11px]">Selected Dice:</span>
-                    <span className="font-heading font-black">
-                      {round.state === 0 ? (
-                        <span className="text-gray-400 text-[11px] flex items-center gap-1">
-                          <Lock className="w-3 h-3 text-gold" /> Hidden Hash
-                        </span>
-                      ) : p.revealed ? (
-                        <span className={`text-base flex items-center gap-1 ${isWinner ? "text-gold font-black scale-110" : "text-white"}`}>
-                          🎲 #{p.selectedNumber}
-                        </span>
-                      ) : round.state >= 2 && revealSecondsLeft === 0 ? (
-                        <span className="text-crimson-light text-[11px] flex items-center gap-1">
-                          ⚠️ Forfeited
-                        </span>
-                      ) : (
-                        <span className="text-amber-400 text-[11px] flex items-center gap-1">
-                          <Clock className="w-3 h-3" /> Awaiting Reveal
-                        </span>
-                      )}
-                    </span>
-                  </div>
-
-                  {round.state === 4 && (
-                    <div className="mt-2 pt-1.5 border-t border-arena-border/40 text-[11px] font-mono">
-                      {isWinner ? (
-                        <span className="text-emerald-400 font-bold flex items-center gap-1">
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Matched #{round.winningNumber}! Wins Pool</span>
-                        </span>
-                      ) : (
-                        <span className="text-gray-500 flex items-center gap-1">
-                          <span>Did not match winning #{round.winningNumber}</span>
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
-
-      {/* Secret Backup Modal */}
-      <RecoverySecretModal
-        isOpen={showSecretModal}
-        onClose={() => setShowSecretModal(false)}
-        secretData={activeSecretData}
-        roundId={round.roundId}
-      />
     </div>
   );
 }

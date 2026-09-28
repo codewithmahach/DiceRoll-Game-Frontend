@@ -20,8 +20,8 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
   const [ethAmount, setEthAmount] = useState("0.05");
   const [usdtAmount, setUsdtAmount] = useState("25");
   const [minPlayers, setMinPlayers] = useState(2);
-  const [maxPlayers, setMaxPlayers] = useState(6);
-  const [durationMinutes, setDurationMinutes] = useState(15);
+  const [maxPlayers, setMaxPlayers] = useState(2);
+  const [durationMinutes, setDurationMinutes] = useState(2);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -157,7 +157,11 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
             <label className="text-xs text-gray-400 font-semibold uppercase font-mono">Min Players</label>
             <select
               value={minPlayers}
-              onChange={(e) => setMinPlayers(Number(e.target.value))}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setMinPlayers(val);
+                if (maxPlayers < val) setMaxPlayers(val);
+              }}
               className="w-full bg-arena-surface border border-arena-border rounded-xl p-2.5 text-xs font-mono text-white focus:outline-none focus:border-crimson"
             >
               <option value={2}>2 (Duel)</option>
@@ -173,10 +177,10 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
               onChange={(e) => setMaxPlayers(Number(e.target.value))}
               className="w-full bg-arena-surface border border-arena-border rounded-xl p-2.5 text-xs font-mono text-white focus:outline-none focus:border-crimson"
             >
+              <option value={2}>2 Players (1v1 Duel)</option>
+              <option value={3}>3 Players</option>
               <option value={4}>4 Players</option>
               <option value={6}>6 Players</option>
-              <option value={8}>8 Players</option>
-              <option value={10}>10 Players</option>
             </select>
           </div>
 
@@ -187,8 +191,8 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
               onChange={(e) => setDurationMinutes(Number(e.target.value))}
               className="w-full bg-arena-surface border border-arena-border rounded-xl p-2.5 text-xs font-mono text-white focus:outline-none focus:border-crimson"
             >
+              <option value={2}>2 Mins (Fast Duel)</option>
               <option value={1}>1 Min (Speed)</option>
-              <option value={2}>2 Mins (Fast)</option>
               <option value={5}>5 Mins</option>
               <option value={15}>15 Mins</option>
             </select>

@@ -43,7 +43,7 @@ export default function ArenaLobby({ onSelectRound, onOpenCreateModal, onBackHom
   const [statusFilter, setStatusFilter] = useState("ALL"); // "ALL", "OPEN", "ROLLING", "COMPLETED"
   const [rounds, setRounds] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [quickSelectNumber, setQuickSelectNumber] = useState(4);
+  const [quickSelectNumber, setQuickSelectNumber] = useState(null);
 
   const fetchRounds = async () => {
     try {
@@ -246,7 +246,13 @@ export default function ArenaLobby({ onSelectRound, onOpenCreateModal, onBackHom
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+            <div className={`grid gap-2.5 ${
+              openRound.maxPlayers <= 2
+                ? "grid-cols-2 max-w-sm mx-auto"
+                : openRound.maxPlayers <= 4
+                ? "grid-cols-2 sm:grid-cols-4 max-w-xl mx-auto"
+                : "grid-cols-2 sm:grid-cols-3 md:grid-cols-6"
+            }`}>
               {Array.from({ length: openRound.maxPlayers }).map((_, i) => {
                 const isFilled = i < openRound.playerCount;
                 return (
@@ -323,7 +329,7 @@ export default function ArenaLobby({ onSelectRound, onOpenCreateModal, onBackHom
               >
                 <Play className="w-5 h-5 fill-current" />
                 <span>
-                  Lock Number #{quickSelectNumber} & Enter Round #{openRound.roundId} (
+                  {quickSelectNumber ? `Lock Number #${quickSelectNumber} & Enter Arena #${openRound.roundId}` : `Enter Arena #${openRound.roundId} & Pick Number`} (
                   {openRound.isETH
                     ? `${ethers.formatEther(openRound.entryAmount)} ETH`
                     : `${ethers.formatUnits(openRound.entryAmount, 6)} USDT`}
