@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useWeb3 } from '../context/Web3Context';
 import Logo from './Logo';
-import { Wallet, Droplets, ShieldCheck, ChevronDown, ExternalLink } from 'lucide-react';
+import { Wallet, ShieldCheck, ChevronDown, ExternalLink } from 'lucide-react';
 import { ethers } from 'ethers';
 
 export default function Navbar({ onEnterArena, inArena = false }) {
@@ -14,32 +14,8 @@ export default function Navbar({ onEnterArena, inArena = false }) {
     connectWallet,
     disconnectWallet,
     switchNetwork,
-    usdtContract,
     refreshBalances
   } = useWeb3();
-
-  const [isMinting, setIsMinting] = useState(false);
-  const [faucetMsg, setFaucetMsg] = useState("");
-
-  const handleMintUSDT = async () => {
-    if (!usdtContract || !account) return;
-    try {
-      setIsMinting(true);
-      setFaucetMsg("Minting 100 USDT...");
-      const mintAmount = ethers.parseUnits("100", 6);
-      const tx = await usdtContract.mint(account, mintAmount);
-      await tx.wait();
-      setFaucetMsg("Success! +100 USDT");
-      await refreshBalances();
-      setTimeout(() => setFaucetMsg(""), 3000);
-    } catch (e) {
-      console.error(e);
-      setFaucetMsg("Mint failed");
-      setTimeout(() => setFaucetMsg(""), 3000);
-    } finally {
-      setIsMinting(false);
-    }
-  };
 
   const isLocalOrSepolia = chainId === 31337 || chainId === 11155111;
 
@@ -96,19 +72,6 @@ export default function Navbar({ onEnterArena, inArena = false }) {
                 {parseFloat(usdtBalance).toFixed(2)}
               </span>
             </div>
-
-            {/* USDT Faucet Button */}
-            {usdtContract && (
-              <button
-                onClick={handleMintUSDT}
-                disabled={isMinting}
-                title="Get 100 free test USDT"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition"
-              >
-                <Droplets className="w-3.5 h-3.5" />
-                <span>{faucetMsg || "+100 USDT Faucet"}</span>
-              </button>
-            )}
           </div>
         )}
 

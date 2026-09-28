@@ -27,8 +27,8 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
 
   if (!isOpen) return null;
 
-  const ethPresets = ["0.01", "0.05", "0.10", "0.25", "0.50"];
-  const usdtPresets = ["5", "10", "25", "50", "100"];
+  const ethPresets = ["0.001", "0.01", "0.05", "0.10", "0.25", "0.50"];
+  const usdtPresets = ["1", "5", "10", "25", "50", "100"];
 
   const handleCreate = async () => {
     if (!account) {
@@ -122,7 +122,7 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
           </div>
 
           {/* Quick Bet Buttons */}
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {(asset === "ETH" ? ethPresets : usdtPresets).map((val) => (
               <button
                 key={val}
@@ -142,9 +142,9 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
           {/* Slider */}
           <input
             type="range"
-            min={asset === "ETH" ? "0.01" : "5"}
+            min={asset === "ETH" ? "0.001" : "1"}
             max={asset === "ETH" ? "1.00" : "500"}
-            step={asset === "ETH" ? "0.01" : "5"}
+            step={asset === "ETH" ? "0.001" : "1"}
             value={asset === "ETH" ? ethAmount : usdtAmount}
             onChange={(e) => (asset === "ETH" ? setEthAmount(e.target.value) : setUsdtAmount(e.target.value))}
             className="w-full accent-crimson cursor-pointer h-1.5 bg-arena-surface rounded-lg"
