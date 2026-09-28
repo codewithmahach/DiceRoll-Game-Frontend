@@ -1,0 +1,224 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #07080c;
+    color: #f3f4f6;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, .font-heading {
+    font-family: 'Cinzel', serif;
+  }
+}
+
+/* Glassmorphism & Gaming Accents */
+.glass-panel {
+  background: rgba(13, 16, 28, 0.82);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(225, 29, 72, 0.2);
+}
+
+.glass-panel-gamer {
+  background: linear-gradient(135deg, rgba(17, 21, 38, 0.9) 0%, rgba(10, 13, 24, 0.95) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.7), inset 0 0 20px rgba(225, 29, 72, 0.08);
+}
+
+.glass-panel-gold {
+  background: rgba(22, 27, 43, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.crimson-gradient-btn {
+  background: linear-gradient(135deg, #f43f5e 0%, #e11d48 50%, #9f1239 100%);
+  box-shadow: 0 4px 25px rgba(225, 29, 72, 0.45);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.crimson-gradient-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 35px rgba(225, 29, 72, 0.7);
+}
+
+.gold-gradient-btn {
+  background: linear-gradient(135deg, #fde047 0%, #f59e0b 50%, #b45309 100%);
+  box-shadow: 0 4px 25px rgba(245, 158, 11, 0.45);
+  color: #150a00;
+  font-weight: 800;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.gold-gradient-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 35px rgba(245, 158, 11, 0.7);
+}
+
+.cyan-gradient-btn {
+  background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 50%, #0891b2 100%);
+  box-shadow: 0 4px 25px rgba(6, 182, 212, 0.45);
+  color: #021a24;
+  font-weight: 800;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.cyan-gradient-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 35px rgba(6, 182, 212, 0.7);
+}
+
+/* 3D Dice Perspective and Physics Styles */
+.dice-scene {
+  perspective: 1400px;
+  perspective-origin: 50% 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.dice-cube {
+  position: relative;
+  width: 110px;
+  height: 110px;
+  transform-style: preserve-3d;
+  transition: transform 1.2s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+
+.dice-face {
+  position: absolute;
+  width: 110px;
+  height: 110px;
+  background: linear-gradient(135deg, rgba(225, 29, 72, 0.96) 0%, rgba(159, 18, 57, 0.94) 50%, rgba(35, 7, 18, 0.98) 100%);
+  border: 2px solid rgba(251, 191, 36, 0.85);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 
+    inset 0 0 25px rgba(251, 191, 36, 0.35),
+    inset 0 0 10px rgba(255, 255, 255, 0.35),
+    0 0 25px rgba(225, 29, 72, 0.4);
+  user-select: none;
+  backface-visibility: visible;
+  overflow: hidden;
+}
+
+/* Specular Light Reflection on Face */
+.dice-face::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.04) 80%, transparent 100%);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  pointer-events: none;
+}
+
+/* Rotations for 110px cube (half-width = 55px) */
+.dice-face-1 { transform: rotateY(0deg) translateZ(55px); }
+.dice-face-2 { transform: rotateY(90deg) translateZ(55px); }
+.dice-face-3 { transform: rotateY(180deg) translateZ(55px); }
+.dice-face-4 { transform: rotateY(-90deg) translateZ(55px); }
+.dice-face-5 { transform: rotateX(90deg) translateZ(55px); }
+.dice-face-6 { transform: rotateX(-90deg) translateZ(55px); }
+
+/* Isometric 3D Angles so the cube ALWAYS displays 3 faces with real depth! */
+.show-1 { transform: rotateX(-22deg) rotateY(28deg) rotateZ(-3deg); }
+.show-2 { transform: rotateX(-22deg) rotateY(-62deg) rotateZ(3deg); }
+.show-3 { transform: rotateX(-22deg) rotateY(-152deg) rotateZ(-3deg); }
+.show-4 { transform: rotateX(-22deg) rotateY(118deg) rotateZ(3deg); }
+.show-5 { transform: rotateX(-112deg) rotateY(28deg) rotateZ(-3deg); }
+.show-6 { transform: rotateX(68deg) rotateY(28deg) rotateZ(3deg); }
+
+/* Continuous Smooth 3D Idle Floating */
+@keyframes diceFloatingIdle {
+  0%, 100% {
+    transform: translateY(0px) rotateX(-20deg) rotateY(28deg) rotateZ(-3deg);
+  }
+  50% {
+    transform: translateY(-14px) rotateX(-26deg) rotateY(38deg) rotateZ(3deg);
+  }
+}
+
+.dice-floating-idle {
+  animation: diceFloatingIdle 4s ease-in-out infinite;
+}
+
+/* Showcase Continuous 360-degree 3D Spin (For Hero / Display) */
+@keyframes diceShowcaseSpin {
+  0% {
+    transform: translateY(0px) rotateX(-22deg) rotateY(0deg) rotateZ(2deg);
+  }
+  50% {
+    transform: translateY(-16px) rotateX(-26deg) rotateY(180deg) rotateZ(-3deg);
+  }
+  100% {
+    transform: translateY(0px) rotateX(-22deg) rotateY(360deg) rotateZ(2deg);
+  }
+}
+
+.dice-showcase-spin {
+  animation: diceShowcaseSpin 9s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+/* Continuous Tumbling Animation when roll is in progress */
+@keyframes rollingTumble3D {
+  0% { transform: translateY(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg); }
+  25% { transform: translateY(-35px) rotateX(450deg) rotateY(270deg) rotateZ(180deg); }
+  50% { transform: translateY(10px) rotateX(900deg) rotateY(540deg) rotateZ(360deg); }
+  75% { transform: translateY(-30px) rotateX(1350deg) rotateY(810deg) rotateZ(540deg); }
+  100% { transform: translateY(0) rotateX(1800deg) rotateY(1080deg) rotateZ(720deg); }
+}
+
+.rolling-active {
+  animation: rollingTumble3D 1.3s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+
+/* Floor Shadow with Scale Pulse */
+@keyframes shadowPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(0.75);
+    opacity: 0.35;
+  }
+}
+
+.dice-floor-shadow {
+  width: 95px;
+  height: 18px;
+  background: radial-gradient(ellipse at center, rgba(225, 29, 72, 0.7) 0%, rgba(245, 158, 11, 0.4) 35%, transparent 70%);
+  border-radius: 50%;
+  filter: blur(5px);
+  margin: 14px auto 0 auto;
+  animation: shadowPulse 4s ease-in-out infinite;
+}
+
+/* Metallic Golden Pips */
+.pip {
+  width: 15px;
+  height: 15px;
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #fef08a 25%, #f59e0b 70%, #92400e 100%);
+  border-radius: 50%;
+  box-shadow: 
+    0 0 10px rgba(245, 158, 11, 0.95),
+    0 0 18px rgba(245, 158, 11, 0.5),
+    inset 0 1px 2px rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(254, 240, 138, 0.8);
+  position: relative;
+  z-index: 2;
+}
