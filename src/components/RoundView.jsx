@@ -21,7 +21,8 @@ import {
   Swords,
   Users,
   Dices,
-  Trophy
+  Trophy,
+  ShieldCheck
 } from 'lucide-react';
 import { ethers } from 'ethers';
 import confetti from 'canvas-confetti';
@@ -718,9 +719,8 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
               {round.state === 1 && "Round Locked"}
               {round.state === 2 && "Reveal Phase Active"}
               {round.state === 3 && "Securing the Roll..."}
-              {round.state === 4 && `Verified Result: Dice #${round.winningNumber}`}
+              {(round.state === 4 || round.state === 6) && `Verified Result: Dice #${round.winningNumber}`}
               {round.state === 5 && `No Winner Rolled: Dice #${round.winningNumber} (${round.rollCount}/3)`}
-              {round.state === 6 && "Round Completed"}
               {round.state === 7 && "Round Cancelled"}
             </h3>
           </div>
@@ -728,7 +728,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
           {/* 3D Dice Visual */}
           <div className="py-4">
             <Dice3D
-              result={(round.state === 4 || round.state === 5) ? round.winningNumber : (playerEntry?.revealed ? playerEntry.selectedNumber : selectedNumber)}
+              result={(round.state === 4 || round.state === 5 || round.state === 6) ? round.winningNumber : (playerEntry?.revealed ? playerEntry.selectedNumber : selectedNumber)}
               isRolling={round.state === 3}
               size="lg"
             />
@@ -963,8 +963,8 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
             </div>
           )}
 
-          {/* STATE 2: REVEAL PHASE */}
-          {round.state === 2 && (
+          {/* STATE 1 & 2: REVEAL PHASE */}
+          {(round.state === 1 || round.state === 2) && (
             <div className="space-y-6">
               <div className="flex items-center justify-between pb-4 border-b border-arena-border">
                 <div>
@@ -1098,13 +1098,13 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
             </div>
           )}
 
-          {/* STATE 4: RESULT READY & DIRECT NUMBER COMPARISON */}
-          {round.state === 4 && (
+          {/* STATE 4 & 6: RESULT READY, SHOWDOWN & SETTLED */}
+          {(round.state === 4 || round.state === 6) && (
             <div className="space-y-6">
               {/* Winning Number Banner */}
               <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-br from-gold/15 via-arena-surface to-gold/10 border-2 border-gold/60 shadow-[0_0_35px_rgba(245,158,11,0.25)] text-center space-y-3">
                 <span className="text-xs font-bold text-gold uppercase tracking-widest block font-mono">
-                  🎲 WINNING RANDOM NUMBER ROLLED
+                  {round.state === 6 ? "🏆 MATCH SETTLED & VERIFIED ON-CHAIN" : "🎲 WINNING RANDOM NUMBER ROLLED"}
                 </span>
                 <div className="font-heading text-6xl font-black text-white drop-shadow-[0_0_20px_rgba(245,158,11,0.8)]">
                   Dice #{round.winningNumber}
@@ -1120,12 +1120,13 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                   ⚔️ Player Selections vs Rolled Dice Comparison:
                 </span>
                 <div className="space-y-2">
-                  {roundPlayers.map((p, i) => {
-                    const isUser = account && p.address.toLowerCase() === account.toLowerCase();
-                    const matched = p.revealed && Number(p.selectedNumber) === round.winningNumber;
+                  {(roundPlayers || []).map((p, i) => {
+                    const isUser = account && p?.address && p.address.toLowerCase() === account.toLowerCase();
+                    const matched = p?.revealed && Number(p?.selectedNumber) === round.winningNumber;
+                    const addrFormatted = p?.address ? `${p.address.slice(0, 6)}...${p.address.slice(-4)}` : `Fighter #${i + 1}`;
                     return (
                       <div
-                        key={p.address || i}
+                        key={p?.address || i}
                         className={`p-3 rounded-xl flex items-center justify-between border text-xs font-mono transition-all ${
                           matched
                             ? "bg-gold/15 border-gold/60 text-gold shadow-[0_0_15px_rgba(245,158,11,0.2)] font-bold"
@@ -1133,12 +1134,12 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <span>{p.address.slice(0, 6)}...{p.address.slice(-4)}</span>
+                          <span>{addrFormatted}</span>
                           {isUser && <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">YOU</span>}
                         </div>
                         <div className="flex items-center gap-2">
                           <span>
-                            {p.revealed ? `Selected: #${p.selectedNumber}` : "Did Not Reveal"}
+                            {p?.revealed ? `Selected: #${p.selectedNumber}` : "Did Not Reveal"}
                           </span>
                           {matched ? (
                             <span className="px-2 py-0.5 rounded-full bg-gold text-gray-950 font-black flex items-center gap-1 text-[11px]">
@@ -1156,11 +1157,29 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
 
               {/* Winner Bounty & Claim Action (Visible to all, actionable by winner) */}
               {(() => {
-                const winningPlayers = roundPlayers.filter(
-                  (p) => p.revealed && Number(p.selectedNumber) === round.winningNumber
+                const winningPlayers = (roundPlayers || []).filter(
+                  (p) => p?.revealed && Number(p?.selectedNumber) === round.winningNumber
                 );
                 const winnerAddress = winningPlayers.length > 0 ? winningPlayers[0].address : null;
                 const isUserWinner = account && winnerAddress && account.toLowerCase() === winnerAddress.toLowerCase();
+
+                // If round is already settled (state 6)
+                if (round.state === 6) {
+                  return (
+                    <div className="p-6 rounded-2xl bg-gradient-to-r from-emerald-950/80 via-teal-950/70 to-emerald-950/80 border-2 border-emerald-500/70 text-center space-y-3 shadow-[0_0_35px_rgba(16,185,129,0.35)]">
+                      <Check className="w-10 h-10 text-emerald-400 mx-auto" />
+                      <div>
+                        <h5 className="font-heading text-xl font-black text-white">✓ MATCH SETTLED & CLAIMED</h5>
+                        <p className="text-xs text-gray-300 mt-1 font-mono">
+                          Winner: <span className="text-gold font-bold">{winnerAddress ? `${winnerAddress.slice(0, 8)}...${winnerAddress.slice(-6)}` : "Verified Winner"}</span>
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl bg-arena-surface/90 border border-arena-border max-w-sm mx-auto text-xs font-mono text-emerald-400 font-bold">
+                        <span>Bounty Reward of {rewardFormatted} has been paid out!</span>
+                      </div>
+                    </div>
+                  );
+                }
 
                 // 1. Disconnected Wallet: Prompt to connect winner's wallet
                 if (!account) {
@@ -1174,7 +1193,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                           WINNER BOUNTY READY TO CLAIM: {rewardFormatted}
                         </h5>
                         <p className="text-xs text-gray-300 mt-1">
-                          Winning Fighter: <span className="font-mono text-gold font-bold">{winnerAddress ? `${winnerAddress.slice(0, 8)}...${winnerAddress.slice(-6)}` : "0x9b68...7d7d"}</span>
+                          Winning Fighter: <span className="font-mono text-gold font-bold">{winnerAddress ? `${winnerAddress.slice(0, 8)}...${winnerAddress.slice(-6)}` : "Verified Winner"}</span>
                         </p>
                       </div>
 
@@ -1186,7 +1205,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                         </div>
                         <div className="flex justify-between text-gray-400">
                           <span>Protocol Fee (2%):</span>
-                          <span className="text-gray-300">0.0004 ETH</span>
+                          <span className="text-gray-300">{isETH ? "0.0004 ETH" : "2%"}</span>
                         </div>
                         <div className="flex justify-between text-gold border-t border-arena-border pt-1 font-bold text-sm">
                           <span>Net Winner Bounty:</span>
@@ -1200,7 +1219,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                         className="crimson-gradient-btn w-full py-4 rounded-xl font-heading text-sm font-black uppercase tracking-wider text-white shadow-[0_0_25px_rgba(225,29,72,0.5)] flex items-center justify-center gap-2 hover:scale-[1.01]"
                       >
                         <Wallet className="w-5 h-5" />
-                        <span>{isConnecting ? "Connecting MetaMask..." : "🦊 CONNECT WALLET (0x9b68...7d7d) TO CLAIM 0.0196 ETH ➜"}</span>
+                        <span>{isConnecting ? "Connecting MetaMask..." : `🦊 CONNECT WALLET TO CLAIM ${rewardFormatted} ➜`}</span>
                       </button>
                     </div>
                   );
@@ -1227,7 +1246,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                           </div>
                           <div className="flex justify-between text-gray-400">
                             <span>Protocol Fee (2%):</span>
-                            <span className="text-gray-300">0.0004 ETH</span>
+                            <span className="text-gray-300">{isETH ? "0.0004 ETH" : "2%"}</span>
                           </div>
                           <div className="flex justify-between text-gold border-t border-arena-border pt-1 font-bold text-sm">
                             <span>Your Claimable Bounty:</span>
@@ -1268,7 +1287,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                       Bounty Reward: <strong className="text-gold">{rewardFormatted}</strong>
                     </span>
                     <span className="text-gray-500 block text-[11px]">
-                      Connected as {account.slice(0, 6)}...{account.slice(-4)}. Only the winning player can claim this bounty.
+                      Connected as {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : "Spectator"}. Only the winning player can claim this bounty.
                     </span>
                   </div>
                 );
@@ -1353,7 +1372,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
             {round.state === 0 && (round.maxPlayers <= 2 ? "1v1 Duel Mode • Waiting for 2nd Fighter" : `Waiting for players (${round.playerCount}/${round.maxPlayers})`)}
             {(round.state === 1 || round.state === 2) && "Numbers being revealed on-chain"}
             {round.state === 3 && "3D Dice Rolling with Chainlink VRF"}
-            {round.state === 4 && `Settled with Winning Dice #${round.winningNumber}!`}
+            {(round.state === 4 || round.state === 6) && `Settled with Winning Dice #${round.winningNumber}!`}
             {round.state === 5 && `No Winner Matched #${round.winningNumber} - Reroll Ready`}
           </div>
         </div>
@@ -1387,12 +1406,13 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
               );
             }
 
-            const isCurrentUser = account && p.address.toLowerCase() === account.toLowerCase();
-            const isWinner = round.state === 4 && p.revealed && Number(p.selectedNumber) === round.winningNumber;
+            const isCurrentUser = account && p?.address && p.address.toLowerCase() === account.toLowerCase();
+            const isWinner = (round.state === 4 || round.state === 6) && p?.revealed && Number(p?.selectedNumber) === round.winningNumber;
+            const addrFormatted = p?.address ? `${p.address.slice(0, 6)}...${p.address.slice(-4)}` : `Fighter #${idx + 1}`;
 
             return (
               <div
-                key={p.address || idx}
+                key={p?.address || idx}
                 className={`p-4 rounded-2xl border transition-all ${
                   isWinner
                     ? "bg-gradient-to-r from-gold/20 via-amber-500/15 to-yellow-500/20 border-gold/70 shadow-[0_0_20px_rgba(245,158,11,0.35)] scale-[1.02]"
@@ -1404,7 +1424,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-[11px] font-mono text-gray-400 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                    <span>{p.address.slice(0, 6)}...{p.address.slice(-4)}</span>
+                    <span>{addrFormatted}</span>
                     {isCurrentUser && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40">
                         YOU
@@ -1426,7 +1446,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                       <span className="text-gray-400 text-[11px] flex items-center gap-1">
                         <Lock className="w-3 h-3 text-gold" /> Hidden Hash
                       </span>
-                    ) : p.revealed ? (
+                    ) : p?.revealed ? (
                       <span className={`text-base flex items-center gap-1 ${isWinner ? "text-gold font-black scale-110" : "text-white"}`}>
                         🎲 #{p.selectedNumber}
                       </span>
@@ -1442,7 +1462,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                   </span>
                 </div>
 
-                {round.state === 4 && (
+                {(round.state === 4 || round.state === 6) && (
                   <div className="mt-2 pt-1.5 border-t border-arena-border/40 text-[11px] font-mono">
                     {isWinner ? (
                       <span className="text-emerald-400 font-bold flex items-center gap-1">

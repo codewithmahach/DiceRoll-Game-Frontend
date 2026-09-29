@@ -86,6 +86,19 @@ export function Web3Provider({ children }) {
       } else {
         setUsdtContract(null);
       }
+    } else {
+      // Public Read-Only Fallback for instantaneous round viewing even before connecting MetaMask
+      try {
+        const publicProvider = new ethers.JsonRpcProvider("https://ethereum-sepolia-rpc.publicnode.com");
+        setDiceContract(new ethers.Contract(diceAddr, diceAbi, publicProvider));
+        if (usdtAddr) {
+          setUsdtContract(new ethers.Contract(usdtAddr, usdtAbi, publicProvider));
+        } else {
+          setUsdtContract(null);
+        }
+      } catch (err) {
+        console.warn("Public provider fallback error:", err.message);
+      }
     }
   }, [signer, provider, deploymentConfig, activeAddresses]);
 

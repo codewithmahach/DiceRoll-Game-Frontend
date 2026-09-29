@@ -9,6 +9,7 @@ import RoundView from './components/RoundView';
 import Leaderboard from './components/Leaderboard';
 import CreateRoundModal from './components/CreateRoundModal';
 import BackgroundWatermarks from './components/BackgroundWatermarks';
+import ErrorBoundary from './components/ErrorBoundary';
 import Logo from './components/Logo';
 import { ShieldCheck, Swords, Dices } from 'lucide-react';
 
@@ -50,35 +51,37 @@ function AppContent() {
       <Navbar onEnterArena={handleEnterArena} inArena={inArenaView || !!selectedRoundId} />
 
       <main className="flex-1 relative z-10">
-        {selectedRoundId ? (
-          /* View 1: Active Duel Arena / Round Screen */
-          <RoundView
-            roundId={selectedRoundId}
-            initialNumber={initialDiceNumber}
-            onBack={handleBackToLobby}
-          />
-        ) : inArenaView ? (
-          /* View 2: Dedicated Multiplayer Arena Lobby */
-          <ArenaLobby
-            onSelectRound={handleSelectRound}
-            onOpenCreateModal={handleOpenCreate}
-            onBackHome={() => handleEnterArena(false)}
-          />
-        ) : (
-          /* View 3: Front Page (Hero + Simple 3-Step Play + Protocol Details) */
-          <>
-            <Hero onEnterArena={() => handleEnterArena(true)} />
-            
-            {/* Simple 3-Step Play directly on front page */}
-            <HowItWorks />
+        <ErrorBoundary onReset={handleBackToLobby}>
+          {selectedRoundId ? (
+            /* View 1: Active Duel Arena / Round Screen */
+            <RoundView
+              roundId={selectedRoundId}
+              initialNumber={initialDiceNumber}
+              onBack={handleBackToLobby}
+            />
+          ) : inArenaView ? (
+            /* View 2: Dedicated Multiplayer Arena Lobby */
+            <ArenaLobby
+              onSelectRound={handleSelectRound}
+              onOpenCreateModal={handleOpenCreate}
+              onBackHome={() => handleEnterArena(false)}
+            />
+          ) : (
+            /* View 3: Front Page (Hero + Simple 3-Step Play + Protocol Details) */
+            <>
+              <Hero onEnterArena={() => handleEnterArena(true)} />
+              
+              {/* Simple 3-Step Play directly on front page */}
+              <HowItWorks />
 
-            {/* Fee Transparency */}
-            <FeeTransparency onEnterArena={() => handleEnterArena(true)} />
+              {/* Fee Transparency */}
+              <FeeTransparency onEnterArena={() => handleEnterArena(true)} />
 
-            {/* Leaderboard */}
-            <Leaderboard />
-          </>
-        )}
+              {/* Leaderboard */}
+              <Leaderboard />
+            </>
+          )}
+        </ErrorBoundary>
       </main>
 
       {/* Footer */}
