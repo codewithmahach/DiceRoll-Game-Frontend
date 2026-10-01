@@ -230,45 +230,16 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
     }
   }, [round?.state, playerEntry?.revealed]);
 
-  if (!round) {
-    return (
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-arena-surface hover:bg-arena-hover border border-arena-border text-xs font-bold text-gray-300 transition"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>← Back to Arena Lobby</span>
-          </button>
-          <span className="text-xs text-gray-400 font-mono">Arena #{roundId}</span>
-        </div>
-
-        <div className="py-20 text-center glass-panel-gamer rounded-3xl border border-arena-border p-8">
-          <RefreshCw className="w-8 h-8 text-crimson animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-300 font-mono mb-2">Connecting to Arena #{roundId}...</p>
-          <p className="text-xs text-gray-500 mb-6">Retrieving on-chain state from Sepolia & backend indexer...</p>
-          <button
-            onClick={onBack}
-            className="px-5 py-2.5 rounded-xl bg-arena-surface hover:bg-arena-hover border border-arena-border text-xs font-bold text-gray-300 hover:text-white transition"
-          >
-            Return to Arena Lobby
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const isETH = round.isETH;
-  const entryFormatted = isETH
-    ? `${ethers.formatEther(round.entryAmount)} ETH`
-    : `${ethers.formatUnits(round.entryAmount, 6)} USDT`;
-  const poolFormatted = isETH
-    ? `${ethers.formatEther(round.totalDeposits)} ETH`
-    : `${ethers.formatUnits(round.totalDeposits, 6)} USDT`;
-  const rewardFormatted = isETH
-    ? `${ethers.formatEther(round.winnerReward || "0")} ETH`
-    : `${ethers.formatUnits(round.winnerReward || "0", 6)} USDT`;
+  const isETH = round ? (round.isETH || round.paymentToken === ethers.ZeroAddress) : true;
+  const entryFormatted = round
+    ? (isETH ? `${ethers.formatEther(round.entryAmount || "0")} ETH` : `${ethers.formatUnits(round.entryAmount || "0", 6)} USDT`)
+    : "0.01 ETH";
+  const poolFormatted = round
+    ? (isETH ? `${ethers.formatEther(round.totalDeposits || "0")} ETH` : `${ethers.formatUnits(round.totalDeposits || "0", 6)} USDT`)
+    : "0 ETH";
+  const rewardFormatted = round
+    ? (isETH ? `${ethers.formatEther(round.winnerReward || "0")} ETH` : `${ethers.formatUnits(round.winnerReward || "0", 6)} USDT`)
+    : "0 ETH";
 
   // Dynamic exact allowance check for USDT
   const hasSufficientAllowance = isETH
@@ -560,8 +531,8 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
   };
 
   // Timer calculations
-  const joinSecondsLeft = Math.max(0, round.joinDeadline - now);
-  const revealSecondsLeft = Math.max(0, round.revealDeadline - now);
+  const joinSecondsLeft = round ? Math.max(0, (round.joinDeadline || 0) - now) : 0;
+  const revealSecondsLeft = round ? Math.max(0, (round.revealDeadline || 0) - now) : 0;
 
   const formatSeconds = (sec) => {
     const m = Math.floor(sec / 60);
@@ -623,6 +594,36 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       handleClaim();
     }
   }, [round?.state, round?.winningNumber, playerEntry?.revealed, playerEntry?.selectedNumber, playerEntry?.claimed, account, diceContract, txPending, loading, autoClaimTriggered]);
+
+  // If round data is still loading from blockchain/indexer, render loading skeleton AFTER all hooks have executed
+  if (!round) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <div className="flex items-center justify-between mb-6">
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-arena-surface hover:bg-arena-hover border border-arena-border text-xs font-bold text-gray-300 transition"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>← Back to Arena Lobby</span>
+          </button>
+          <span className="text-xs text-gray-400 font-mono">Arena #{roundId}</span>
+        </div>
+
+        <div className="py-20 text-center glass-panel-gamer rounded-3xl border border-arena-border p-8">
+          <RefreshCw className="w-8 h-8 text-crimson animate-spin mx-auto mb-3" />
+          <p className="text-sm text-gray-300 font-mono mb-2">Connecting to Arena #{roundId}...</p>
+          <p className="text-xs text-gray-500 mb-6">Retrieving on-chain state from Sepolia & backend indexer...</p>
+          <button
+            onClick={onBack}
+            className="px-5 py-2.5 rounded-xl bg-arena-surface hover:bg-arena-hover border border-arena-border text-xs font-bold text-gray-300 hover:text-white transition"
+          >
+            Return to Arena Lobby
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">

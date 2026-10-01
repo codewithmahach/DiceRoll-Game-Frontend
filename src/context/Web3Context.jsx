@@ -54,14 +54,14 @@ export function Web3Provider({ children }) {
     loadArtifacts();
   }, []);
 
-  // Resolve active network contract addresses (supports multi-network deployment JSON)
+  // Resolve active network contract addresses (defaults to Sepolia 11155111 on live testnet)
   const activeAddresses = React.useMemo(() => {
     if (!deploymentConfig?.addresses) return null;
     const all = deploymentConfig.addresses;
     if (chainId && all.networks && all.networks[chainId]) {
       return all.networks[chainId];
     }
-    return all;
+    return (all.networks && all.networks["11155111"]) ? all.networks["11155111"] : all;
   }, [deploymentConfig, chainId]);
 
   // Update Contract Instances
@@ -111,12 +111,17 @@ export function Web3Provider({ children }) {
 
       const diceAddr = activeAddresses?.multiplayerDiceRoll;
       if (usdtContract && diceAddr) {
-        const [uBal, uAllow] = await Promise.all([
-          usdtContract.balanceOf(account),
-          usdtContract.allowance(account, diceAddr)
-        ]);
-        setUsdtBalance(ethers.formatUnits(uBal, 6));
-        setUsdtAllowance(ethers.formatUnits(uAllow, 6));
+        try {
+          const [uBal, uAllow] = await Promise.all([
+            usdtContract.balanceOf(account),
+            usdtContract.allowance(account, diceAddr)
+          ]);
+          setUsdtBalance(ethers.formatUnits(uBal, 6));
+          setUsdtAllowance(ethers.formatUnits(uAllow, 6));
+        } catch (uErr) {
+          // Non-blocking warning if USDT contract not yet deployed or querying unsupported address
+          console.warn("[Web3Context] USDT balance/allowance query:", uErr.message);
+        }
       }
     } catch (e) {
       console.error("Error refreshing balances:", e.message);
