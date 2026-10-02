@@ -17,11 +17,11 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
   } = useWeb3();
 
   const [asset, setAsset] = useState(defaultAsset);
-  const [ethAmount, setEthAmount] = useState("0.05");
+  const [ethAmount, setEthAmount] = useState("0.001");
   const [usdtAmount, setUsdtAmount] = useState("25");
   const [minPlayers, setMinPlayers] = useState(2);
   const [maxPlayers, setMaxPlayers] = useState(2);
-  const [durationMinutes, setDurationMinutes] = useState(2);
+  const [durationMinutes, setDurationMinutes] = useState(10);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -191,10 +191,11 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
               onChange={(e) => setDurationMinutes(Number(e.target.value))}
               className="w-full bg-arena-surface border border-arena-border rounded-xl p-2.5 text-xs font-mono text-white focus:outline-none focus:border-crimson"
             >
-              <option value={2}>2 Mins (Fast Duel)</option>
-              <option value={1}>1 Min (Speed)</option>
+              <option value={10}>10 Mins (Recommended)</option>
               <option value={5}>5 Mins</option>
               <option value={15}>15 Mins</option>
+              <option value={30}>30 Mins</option>
+              <option value={60}>60 Mins (1 Hour)</option>
             </select>
           </div>
         </div>

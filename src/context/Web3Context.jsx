@@ -268,6 +268,9 @@ export function Web3Provider({ children }) {
     if (rawMsg.includes("too many errors") || rawMsg.includes("RPC endpoint") || rawMsg.includes("rate limit")) {
       return "Sepolia RPC network is busy. Please wait a few seconds and retry.";
     }
+    if (rawMsg.includes("JoinDeadlinePassed") || errString.includes("0xa9229d46") || rawMsg.includes("0xa9229d46")) {
+      return "The joining timer for this arena has expired (00:00). Please create or join a new match.";
+    }
     if (rawMsg.includes("InvalidAmount")) return "Exact entry amount required for this round.";
     if (rawMsg.includes("AlreadyCommitted")) return "You have already joined this round.";
     if (rawMsg.includes("RoundFull")) return "Round has reached maximum player capacity.";

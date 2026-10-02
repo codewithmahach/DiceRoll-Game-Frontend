@@ -22,7 +22,8 @@ import {
   Users,
   Dices,
   Trophy,
-  ShieldCheck
+  ShieldCheck,
+  X
 } from 'lucide-react';
 import { ethers } from 'ethers';
 import confetti from 'canvas-confetti';
@@ -64,6 +65,13 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
   const [autoRollTriggered, setAutoRollTriggered] = useState(false);
   const [autoClaimTriggered, setAutoClaimTriggered] = useState(false);
 
+  // Modal notification popups
+  const [showPlayer1LockedModal, setShowPlayer1LockedModal] = useState(false);
+  const [showDuelReadyModal, setShowDuelReadyModal] = useState(false);
+  const [showWinnerModal, setShowWinnerModal] = useState(false);
+  const [duelReadyDismissed, setDuelReadyDismissed] = useState(false);
+  const [winnerModalDismissed, setWinnerModalDismissed] = useState(false);
+
   // Ticker for timers
   useEffect(() => {
     const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
@@ -100,6 +108,27 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       }
     }
   }, [round?.state, playerEntry?.revealed, playerEntry?.selectedNumber, round?.winningNumber]);
+
+  // Trigger Duel Ready popup when both players are locked in (playerCount >= maxPlayers)
+  useEffect(() => {
+    if (round && round.playerCount >= round.maxPlayers && round.playerCount > 1 && !duelReadyDismissed) {
+      setShowDuelReadyModal(true);
+    }
+  }, [round?.playerCount, round?.maxPlayers, duelReadyDismissed]);
+
+  // Trigger Winner popup when round is in Result Ready state (4 or 6) and user is a winner
+  useEffect(() => {
+    if (
+      round &&
+      (round.state === 4 || round.state === 6) &&
+      playerEntry &&
+      playerEntry.revealed &&
+      Number(playerEntry.selectedNumber) === round.winningNumber &&
+      !winnerModalDismissed
+    ) {
+      setShowWinnerModal(true);
+    }
+  }, [round?.state, round?.winningNumber, playerEntry?.revealed, playerEntry?.selectedNumber, winnerModalDismissed]);
 
   // Fetch Round Data (Instant backend API + On-chain sync)
   const loadRound = async () => {
@@ -331,6 +360,12 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       setSuccessMsg("Committed! Your selected dice number is locked and hidden.");
       await refreshBalances();
       await loadRound();
+
+      if ((round.playerCount + 1) < round.maxPlayers) {
+        setShowPlayer1LockedModal(true);
+      } else {
+        setShowDuelReadyModal(true);
+      }
     } catch (err) {
       console.error(err);
       setErrorMsg(parseContractError(err));
@@ -533,6 +568,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
   // Timer calculations
   const joinSecondsLeft = round ? Math.max(0, (round.joinDeadline || 0) - now) : 0;
   const revealSecondsLeft = round ? Math.max(0, (round.revealDeadline || 0) - now) : 0;
+  const isJoinExpired = round ? (round.state === 0 && (round.joinDeadline || 0) > 0 && joinSecondsLeft === 0) : false;
 
   const formatSeconds = (sec) => {
     const m = Math.floor(sec / 60);
@@ -861,7 +897,25 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                           <span>✓ Allowance Confirmed</span>
                         </div>
                       )}
-                      {!selectedNumber ? (
+                      {isJoinExpired ? (
+                        <div className="p-5 rounded-2xl bg-amber-500/10 border-2 border-amber-500/40 text-center space-y-3">
+                          <div className="flex items-center justify-center gap-2 text-amber-400 font-bold font-mono text-xs">
+                            <Clock className="w-4 h-4 text-amber-400" />
+                            <span>⏰ ARENA JOINING WINDOW EXPIRED (00:00)</span>
+                          </div>
+                          <p className="text-xs text-gray-300 leading-relaxed max-w-sm mx-auto">
+                            The countdown timer for joining Arena #{round.roundId} has ended. The smart contract prevents late joins to ensure fair play. Please return to the Arena Lobby to join or create an active match.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={onBack}
+                            className="px-5 py-2.5 rounded-xl bg-arena-surface hover:bg-arena-hover border border-arena-border text-xs font-bold text-white transition inline-flex items-center gap-2"
+                          >
+                            <ArrowLeft className="w-4 h-4" />
+                            <span>Back to Arena Lobby</span>
+                          </button>
+                        </div>
+                      ) : !selectedNumber ? (
                         <button
                           type="button"
                           disabled={true}
@@ -895,20 +949,34 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                 </>
               ) : (
                 /* Player Already Committed */
-                <div className="p-6 rounded-2xl bg-arena-surface border border-emerald-500/30 text-center space-y-4">
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
-                    <Check className="w-6 h-6" />
+                <div className="p-6 rounded-3xl bg-gradient-to-br from-emerald-950/60 via-arena-surface to-emerald-950/40 border-2 border-emerald-500/50 text-center space-y-4 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+                  <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                    <Check className="w-8 h-8 text-emerald-400" />
                   </div>
                   <div>
-                    <h5 className="font-heading text-lg font-bold text-white">Your Selection Is Locked</h5>
-                    <p className="text-xs text-gray-400 max-w-sm mx-auto mt-1">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-emerald-400 block mb-1">
+                      FIGHTER 1 CONFIRMED & SEALED
+                    </span>
+                    <h5 className="font-heading text-xl font-black text-white">Your Selection Is Locked!</h5>
+                    <p className="text-xs text-gray-300 max-w-sm mx-auto mt-1">
                       You are entered in Round #{round.roundId}. When {round.maxPlayers} fighters join or the join timer reaches 00:00, the match will automatically progress to reveal and 3D dice roll!
                     </p>
                   </div>
 
-                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    <span>Number #{activeSecretData?.selectedNumber || selectedNumber || "?"} Cryptographically Protected</span>
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      <span>Number #{activeSecretData?.selectedNumber || selectedNumber || playerEntry?.selectedNumber || "?"} Cryptographically Protected</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPlayer1LockedModal(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-arena-surface hover:bg-arena-hover border border-arena-border text-xs font-mono text-gray-300 hover:text-white transition"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-gold" />
+                      <span>View Confirmation Receipt</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -1482,6 +1550,230 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
           })}
         </div>
       </div>
+
+      {/* MODAL 1: PLAYER 1 SELECTION LOCKED POPUP */}
+      {showPlayer1LockedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="glass-panel-gamer max-w-md w-full rounded-3xl p-6 sm:p-8 border-2 border-emerald-500/60 shadow-[0_0_50px_rgba(16,185,129,0.3)] relative text-center space-y-5">
+            <button
+              onClick={() => setShowPlayer1LockedModal(false)}
+              className="absolute top-5 right-5 p-1 rounded-full text-gray-400 hover:text-white transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.4)]">
+              <Check className="w-8 h-8 text-emerald-400" />
+            </div>
+
+            <div>
+              <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-emerald-400 block mb-1">
+                FIGHTER 1 REGISTERED
+              </span>
+              <h3 className="font-heading text-2xl font-black text-white">
+                Selection Locked & Confirmed!
+              </h3>
+              <p className="text-xs text-gray-300 mt-1">
+                Your lucky number has been cryptographically sealed and confirmed on Sepolia blockchain!
+              </p>
+            </div>
+
+            {/* Receipt Summary Card */}
+            <div className="p-4 rounded-2xl bg-arena-surface/90 border border-arena-border text-left font-mono text-xs space-y-2">
+              <div className="flex justify-between items-center pb-1.5 border-b border-arena-border/50">
+                <span className="text-gray-400">Arena Round:</span>
+                <span className="text-white font-bold">Round #{round.roundId}</span>
+              </div>
+              <div className="flex justify-between items-center pb-1.5 border-b border-arena-border/50">
+                <span className="text-gray-400">Fighter Slot:</span>
+                <span className="text-emerald-400 font-bold">Slot 1 of {round.maxPlayers} (You)</span>
+              </div>
+              <div className="flex justify-between items-center pb-1.5 border-b border-arena-border/50">
+                <span className="text-gray-400">Chosen Lucky Number:</span>
+                <span className="text-gold font-bold text-sm">🎲 Dice #{activeSecretData?.selectedNumber || selectedNumber || playerEntry?.selectedNumber || "?"}</span>
+              </div>
+              <div className="flex justify-between items-center pb-1.5 border-b border-arena-border/50">
+                <span className="text-gray-400">Entry Stake:</span>
+                <span className="text-white font-bold">{entryFormatted}</span>
+              </div>
+              <div className="flex justify-between items-center text-[10px]">
+                <span className="text-gray-400">Commitment Hash:</span>
+                <span className="text-gray-300 font-mono">
+                  {playerEntry?.commitment && playerEntry.commitment !== ethers.ZeroHash
+                    ? `${playerEntry.commitment.slice(0, 10)}...${playerEntry.commitment.slice(-8)}`
+                    : "Cryptographically Sealed"}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 font-mono text-left space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Next Step: Waiting for Fighter 2</span>
+              </div>
+              <p className="text-[11px] text-gray-400">
+                Switch to your 2nd account in MetaMask or invite your opponent to join this match. As soon as Fighter 2 joins, the duel will start automatically!
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPlayer1LockedModal(false)}
+              className="crimson-gradient-btn w-full py-3.5 rounded-xl font-heading text-sm font-bold uppercase tracking-wider text-white shadow-lg hover:scale-[1.01]"
+            >
+              Got It! Waiting for Opponent ➜
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 2: DUEL READY / FIGHTER 2 JOINED POPUP */}
+      {showDuelReadyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="glass-panel-gamer max-w-md w-full rounded-3xl p-6 sm:p-8 border-2 border-crimson/60 shadow-[0_0_50px_rgba(225,29,72,0.4)] relative text-center space-y-5">
+            <button
+              onClick={() => {
+                setShowDuelReadyModal(false);
+                setDuelReadyDismissed(true);
+              }}
+              className="absolute top-5 right-5 p-1 rounded-full text-gray-400 hover:text-white transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-16 h-16 rounded-full bg-crimson/20 text-crimson-light flex items-center justify-center mx-auto border border-crimson/50 shadow-[0_0_20px_rgba(225,29,72,0.5)] animate-pulse">
+              <Swords className="w-8 h-8 text-crimson-light" />
+            </div>
+
+            <div>
+              <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-gold block mb-1">
+                BOTH FIGHTERS READY ({round.playerCount} / {round.maxPlayers})
+              </span>
+              <h3 className="font-heading text-2xl font-black text-white">
+                Fighter 2 Has Entered The Arena!
+              </h3>
+              <p className="text-xs text-gray-300 mt-1">
+                Both fighters are locked in! The match is now starting automatically — numbers are revealing and the 3D dice is ready to roll.
+              </p>
+            </div>
+
+            {/* Duel Arena Summary */}
+            <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-arena-surface border border-arena-border text-left font-mono text-xs">
+              <div>
+                <span className="text-[10px] text-gray-400 uppercase block">Total Prize Pool</span>
+                <span className="text-gold font-bold text-sm">{poolFormatted}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-gray-400 uppercase block">Match Mode</span>
+                <span className="text-white font-bold">1v1 Duel</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/30 text-xs text-purple-300 font-mono flex items-center gap-2">
+              <Zap className="w-4 h-4 text-purple-400 animate-spin" />
+              <span>Auto-Duel Active: Auto-revealing numbers & rolling 3D dice...</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowDuelReadyModal(false);
+                setDuelReadyDismissed(true);
+              }}
+              className="gold-gradient-btn w-full py-3.5 rounded-xl font-heading text-sm font-black uppercase tracking-wider text-gray-950 shadow-[0_0_25px_rgba(245,158,11,0.5)] hover:scale-[1.01]"
+            >
+              Enter Duel Showdown ⚔️
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: WINNER CELEBRATION POPUP */}
+      {showWinnerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
+          <div className="glass-panel-gamer max-w-md w-full rounded-3xl p-6 sm:p-8 border-2 border-gold/70 shadow-[0_0_60px_rgba(245,158,11,0.5)] relative text-center space-y-5">
+            <button
+              onClick={() => {
+                setShowWinnerModal(false);
+                setWinnerModalDismissed(true);
+              }}
+              className="absolute top-5 right-5 p-1 rounded-full text-gray-400 hover:text-white transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-16 h-16 rounded-full bg-gold/20 text-gold flex items-center justify-center mx-auto border border-gold/50 shadow-[0_0_25px_rgba(245,158,11,0.6)] animate-bounce">
+              <Trophy className="w-8 h-8 text-gold" />
+            </div>
+
+            <div>
+              <span className="text-[11px] font-mono font-bold uppercase tracking-widest text-gold block mb-1">
+                DUEL CHAMPION • WINNER DECLARED
+              </span>
+              <h3 className="font-heading text-3xl font-black text-white">
+                🎉 YOU WON THE DUEL!
+              </h3>
+              <p className="text-xs text-gray-300 mt-1">
+                Your lucky number matched the provably fair Chainlink VRF dice roll!
+              </p>
+            </div>
+
+            {/* Winning Details Card */}
+            <div className="p-4 rounded-2xl bg-arena-surface/90 border border-gold/40 text-left font-mono text-xs space-y-2">
+              <div className="flex justify-between items-center pb-1.5 border-b border-arena-border/50">
+                <span className="text-gray-400">Winning Dice Roll:</span>
+                <span className="text-gold font-black text-base">🎲 #{round.winningNumber}</span>
+              </div>
+              <div className="flex justify-between items-center pb-1.5 border-b border-arena-border/50">
+                <span className="text-gray-400">Your Selected Number:</span>
+                <span className="text-emerald-400 font-bold text-sm">🎲 #{playerEntry?.selectedNumber}</span>
+              </div>
+              <div className="flex justify-between items-center pb-1.5 border-b border-arena-border/50">
+                <span className="text-gray-400">Total Bounty Pool:</span>
+                <span className="text-white font-bold">{poolFormatted}</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 text-sm font-bold text-gold">
+                <span>Net Winner Payout:</span>
+                <span>{rewardFormatted}</span>
+              </div>
+            </div>
+
+            {/* Transfer status */}
+            {playerEntry?.claimed ? (
+              <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs text-emerald-400 font-mono flex items-center justify-center gap-2">
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span>✓ Reward transferred directly to your wallet!</span>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="p-3 rounded-xl bg-gold/10 border border-gold/30 text-xs text-gold font-mono flex items-center justify-center gap-2">
+                  <Sparkles className="w-4 h-4 text-gold animate-spin" />
+                  <span>Auto-claim active: Transferring {rewardFormatted} to wallet...</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClaim}
+                  disabled={loading || txPending}
+                  className="gold-gradient-btn w-full py-3.5 rounded-xl font-heading text-sm font-black uppercase tracking-wider text-gray-950 shadow-[0_0_25px_rgba(245,158,11,0.6)]"
+                >
+                  {txPending ? "Transferring Reward..." : `🏆 Claim Bounty (${rewardFormatted}) Now ➜`}
+                </button>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowWinnerModal(false);
+                setWinnerModalDismissed(true);
+              }}
+              className="w-full py-3 rounded-xl font-bold text-xs uppercase tracking-wider bg-arena-surface hover:bg-arena-hover text-gray-300 hover:text-white border border-arena-border transition"
+            >
+              Close Window
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
