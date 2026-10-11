@@ -188,11 +188,20 @@ export function Web3Provider({ children }) {
   useEffect(() => {
     if (!window.ethereum) return;
 
-    const handleAccountsChanged = (accs) => {
-      if (accs.length === 0) {
+    const handleAccountsChanged = async (accs) => {
+      if (!accs || accs.length === 0) {
         disconnectWallet();
       } else {
-        setAccount(accs[0]);
+        try {
+          const browserProvider = new ethers.BrowserProvider(window.ethereum);
+          const s = await browserProvider.getSigner();
+          setProvider(browserProvider);
+          setSigner(s);
+          setAccount(accs[0]);
+        } catch (err) {
+          console.warn("[Web3Context] Failed to re-instantiate signer on accountsChanged:", err);
+          setAccount(accs[0]);
+        }
       }
     };
 
@@ -259,6 +268,52 @@ export function Web3Provider({ children }) {
     const rawMsg = err?.reason || err?.shortMessage || err?.data?.message || err?.message || "";
     const errString = typeof err === "object" ? JSON.stringify(err) : String(err);
 
+    // 1. Check for custom error hex selectors (4-byte signatures)
+    const extractHexData = (e) => {
+      if (!e) return null;
+      if (typeof e.data === "string" && e.data.startsWith("0x")) return e.data;
+      if (typeof e.info?.error?.data === "string" && e.info.error.data.startsWith("0x")) return e.info.error.data;
+      if (typeof e.error?.data === "string" && e.error.data.startsWith("0x")) return e.error.data;
+      if (typeof e.data?.data === "string" && e.data.data.startsWith("0x")) return e.data.data;
+      const match = (e.message || "").match(/data="(0x[0-9a-fA-F]+)"/);
+      if (match) return match[1];
+      const match2 = (e.message || "").match(/(0x[0-9a-fA-F]{8})/);
+      if (match2) return match2[1];
+      return null;
+    };
+
+    const hex = extractHexData(err);
+    if (hex) {
+      const sel = hex.slice(0, 10).toLowerCase();
+      const CUSTOM_ERRORS = {
+        "0xbfec5558": "You have already joined this round with this wallet address. Please switch to your 2nd wallet account in MetaMask to join as Player 2.",
+        "0x32e1428f": "This arena is full. All player slots have been taken.",
+        "0x402bc007": "This arena is no longer open for joining.",
+        "0xa9229d46": "The joining timer for this arena has expired (00:00). Please create or join a new match.",
+        "0x2c5211c6": "Exact entry amount required for this arena.",
+        "0x666710f4": "Arena not found.",
+        "0x8269aaa1": "Invalid player count limits.",
+        "0xfe6ce5ac": "Dice number must be between 1 and 6.",
+        "0x4e7e4c0b": "Round has not locked yet.",
+        "0x7357176d": "Reveal window has expired.",
+        "0xa89ac151": "You have already revealed your dice choice for this round.",
+        "0xc06789fa": "Invalid commitment: selected number or secret salt does not match.",
+        "0x81791cb4": "You have not committed to this round.",
+        "0x646cf558": "You have already claimed this prize reward.",
+        "0xf13f3409": "Your revealed number did not match the winning roll.",
+        "0x8a654c07": "Results are not ready yet.",
+        "0x779df1a9": "This round has been cancelled.",
+        "0xa85e6f1a": "You have already claimed your refund.",
+        "0xa0f3feea": "Wrong payment token specified.",
+        "0x948a9f34": "Randomness request is already pending.",
+        "0xc523cf4c": "Maximum rerolls reached.",
+        "0x228650c3": "Not eligible for reroll."
+      };
+      if (CUSTOM_ERRORS[sel]) {
+        return CUSTOM_ERRORS[sel];
+      }
+    }
+
     if (rawMsg.includes("-32002") || errString.includes("-32002")) {
       return "MetaMask popup is already pending or RPC is busy. Please open your MetaMask extension to confirm.";
     }
@@ -272,19 +327,28 @@ export function Web3Provider({ children }) {
       return "The joining timer for this arena has expired (00:00). Please create or join a new match.";
     }
     if (rawMsg.includes("InvalidAmount")) return "Exact entry amount required for this round.";
-    if (rawMsg.includes("AlreadyCommitted")) return "You have already joined this round.";
-    if (rawMsg.includes("RoundFull")) return "Round has reached maximum player capacity.";
-    if (rawMsg.includes("RoundNotOpen")) return "This round is no longer open for joining.";
+    if (rawMsg.includes("AlreadyCommitted") || rawMsg.includes("0xbfec5558") || errString.includes("0xbfec5558")) {
+      return "You have already joined this round with this wallet address. Please switch to your 2nd wallet account in MetaMask to join as Player 2.";
+    }
+    if (rawMsg.includes("RoundFull") || rawMsg.includes("0x32e1428f") || errString.includes("0x32e1428f")) {
+      return "This arena is full. All player slots have been taken.";
+    }
+    if (rawMsg.includes("RoundNotOpen") || rawMsg.includes("0x402bc007") || errString.includes("0x402bc007")) {
+      return "This arena is no longer open for joining.";
+    }
     if (rawMsg.includes("InvalidCommitment")) return "The selected number or secret salt does not match your initial commitment.";
     if (rawMsg.includes("AlreadyRevealed")) return "You have already revealed your choice for this round.";
     if (rawMsg.includes("RevealPeriodActive")) return "Reveal period is still in progress.";
     if (rawMsg.includes("AlreadyClaimed")) return "You have already claimed this reward.";
     if (rawMsg.includes("NotAWinningPlayer")) return "Your revealed number did not match the winning roll.";
-    if (rawMsg.includes("missing revert data") || rawMsg.includes("CALL_EXCEPTION") || errString.includes("missing revert data")) {
-      return "Transaction reverted by smart contract. The match timer may have expired or criteria not met.";
-    }
     if (rawMsg.includes("insufficient funds") || errString.includes("insufficient funds")) {
       return "Insufficient wallet funds for stake and network gas fees.";
+    }
+    if (rawMsg.includes("execution reverted (unknown custom error)")) {
+      return "Transaction simulation reverted on-chain. Please ensure you are connected with your second wallet account (Player 2) and have sufficient ETH.";
+    }
+    if (rawMsg.includes("missing revert data") || rawMsg.includes("CALL_EXCEPTION") || errString.includes("missing revert data")) {
+      return "Transaction reverted by smart contract. The match timer may have expired or criteria not met.";
     }
 
     if (err?.reason) return err.reason;

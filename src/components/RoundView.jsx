@@ -304,6 +304,21 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
     }
   };
 
+  // Helper to ensure contract is always bound to the freshest active MetaMask signer
+  const getActiveContract = async () => {
+    if (!diceContract) return null;
+    if (window.ethereum) {
+      try {
+        const bp = new ethers.BrowserProvider(window.ethereum);
+        const s = await bp.getSigner();
+        return diceContract.connect(s);
+      } catch (e) {
+        console.warn("Using default contract signer:", e);
+      }
+    }
+    return diceContract;
+  };
+
   // Join & Commit Action
   const handleCommit = async () => {
     if (!account) {
@@ -316,20 +331,46 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       setErrorMsg("");
       setSuccessMsg("");
 
+      // 0. Dynamically resolve active signer and account from MetaMask to prevent stale closures
+      let activeSigner = signer;
+      let activeAccount = account;
+      if (window.ethereum) {
+        try {
+          const bp = new ethers.BrowserProvider(window.ethereum);
+          activeSigner = await bp.getSigner();
+          activeAccount = await activeSigner.getAddress();
+        } catch (e) {
+          console.warn("Using current account from state:", e);
+        }
+      }
+
+      // Check if this wallet account has already committed to this round
+      if (diceContract && activeAccount) {
+        try {
+          const existing = await diceContract.playerEntries(round.roundId, activeAccount);
+          if (existing.commitment && existing.commitment !== ethers.ZeroHash) {
+            setErrorMsg(`Wallet ${activeAccount.slice(0, 6)}...${activeAccount.slice(-4)} has already committed to Round #${round.roundId}. Please switch to your 2nd account in MetaMask to join as Player 2.`);
+            return;
+          }
+        } catch (chkErr) {
+          console.warn("Pre-check commitment warning:", chkErr);
+        }
+      }
+
       // 1. Generate client-side private secret salt
       const secretSalt = ethers.hexlify(ethers.randomBytes(32));
 
-      // 2. Compute commitment hash
+      // 2. Compute commitment hash with activeAccount
       const commitment = ethers.solidityPackedKeccak256(
         ["uint256", "address", "uint8", "bytes32"],
-        [round.roundId, account, selectedNumber, secretSalt]
+        [round.roundId, activeAccount, selectedNumber, secretSalt]
       );
 
       // 3. Store locally in browser
       storeSecret(round.roundId, selectedNumber, secretSalt, commitment);
       setActiveSecretData({
         roundId: round.roundId,
-        player: account,
+        player: activeAccount,
         selectedNumber,
         secretSalt,
         commitment
@@ -353,11 +394,28 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
         }
       }
 
-      // 4. Handle token payment and submit commit
+      // 4. Bind contract with active signer and estimate gas with fallback
+      const contractWithSigner = (diceContract && activeSigner)
+        ? diceContract.connect(activeSigner)
+        : diceContract;
+
+      let gasLimitOverride;
+      try {
+        const est = await contractWithSigner.commit.estimateGas(round.roundId, commitment, {
+          value: isETH ? round.entryAmount : 0n
+        });
+        gasLimitOverride = (est * 130n) / 100n; // 30% safety buffer
+      } catch (estErr) {
+        console.warn("Gas estimation notice, using fallback limit:", estErr);
+        gasLimitOverride = 850000n;
+      }
+
+      // 5. Submit commit transaction
       if (isETH) {
         setTxPending(true);
-        const tx = await diceContract.commit(round.roundId, commitment, {
-          value: round.entryAmount
+        const tx = await contractWithSigner.commit(round.roundId, commitment, {
+          value: round.entryAmount,
+          gasLimit: gasLimitOverride
         });
         await tx.wait();
       } else {
@@ -371,7 +429,9 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
         }
 
         setTxPending(true);
-        const tx = await diceContract.commit(round.roundId, commitment);
+        const tx = await contractWithSigner.commit(round.roundId, commitment, {
+          gasLimit: gasLimitOverride
+        });
         await tx.wait();
       }
 
@@ -413,7 +473,8 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       setErrorMsg("");
       setTxPending(true);
 
-      const tx = await diceContract.reveal(
+      const contractWithSigner = await getActiveContract();
+      const tx = await contractWithSigner.reveal(
         round.roundId,
         activeSecretData.selectedNumber,
         activeSecretData.secretSalt
@@ -447,7 +508,8 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       setErrorMsg("");
       setTxPending(true);
 
-      const tx = await diceContract.claimReward(round.roundId);
+      const contractWithSigner = await getActiveContract();
+      const tx = await contractWithSigner.claimReward(round.roundId);
       await tx.wait();
 
       setSuccessMsg(`Reward of ${rewardFormatted} transferred to your wallet!`);
@@ -478,7 +540,8 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       setErrorMsg("");
       setTxPending(true);
 
-      const tx = await diceContract.claimRefund(round.roundId);
+      const contractWithSigner = await getActiveContract();
+      const tx = await contractWithSigner.claimRefund(round.roundId);
       await tx.wait();
 
       setSuccessMsg(`Full refund of ${entryFormatted} returned to your wallet!`);
@@ -510,14 +573,15 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       setSuccessMsg("");
       setTxPending(true);
 
+      const contractWithSigner = await getActiveContract();
       // 1. If round is still in OPEN state (0), lockRound cancels it on-chain
       if (round.state === 0) {
-        const txLock = await diceContract.lockRound(round.roundId);
+        const txLock = await contractWithSigner.lockRound(round.roundId);
         await txLock.wait();
       }
 
       // 2. Claim full 100% refund
-      const txRefund = await diceContract.claimRefund(round.roundId);
+      const txRefund = await contractWithSigner.claimRefund(round.roundId);
       await txRefund.wait();
 
       setSuccessMsg(`Match cancelled! Full refund of ${entryFormatted} has been returned to your wallet!`);
@@ -548,7 +612,8 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       setErrorMsg("");
       setTxPending(true);
 
-      const tx = await diceContract.reroll(round.roundId);
+      const contractWithSigner = await getActiveContract();
+      const tx = await contractWithSigner.reroll(round.roundId);
       await tx.wait();
 
       setSuccessMsg("Reroll requested! Securing verifiable roll...");
@@ -578,7 +643,8 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       setErrorMsg("");
       setTxPending(true);
 
-      const tx = await diceContract.closeRevealAndRequestRoll(round.roundId);
+      const contractWithSigner = await getActiveContract();
+      const tx = await contractWithSigner.closeRevealAndRequestRoll(round.roundId);
       await tx.wait();
 
       await loadRound();
@@ -608,7 +674,8 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       setSuccessMsg("");
       setTxPending(true);
 
-      const tx = await diceContract.lockRound(round.roundId);
+      const contractWithSigner = await getActiveContract();
+      const tx = await contractWithSigner.lockRound(round.roundId);
       await tx.wait();
 
       setSuccessMsg("Game started! Arena locked and reveal phase is now active. Reveal your chosen number!");
