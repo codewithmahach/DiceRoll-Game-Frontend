@@ -74,11 +74,43 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
   const [duelReadyDismissed, setDuelReadyDismissed] = useState(false);
   const [winnerModalDismissed, setWinnerModalDismissed] = useState(false);
 
+  const [rollCountdown, setRollCountdown] = useState(15);
+  const [fastRollTriggered, setFastRollTriggered] = useState(false);
+
   // Ticker for timers
   useEffect(() => {
     const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // 15-second countdown timer during State 3 (3D Dice Roll)
+  useEffect(() => {
+    if (round?.state === 3) {
+      const timer = setInterval(() => {
+        setRollCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    } else {
+      setRollCountdown(15);
+      setFastRollTriggered(false);
+    }
+  }, [round?.state]);
+
+  // When countdown hits 0 in state 3, ping fast-roll fallback
+  useEffect(() => {
+    if (round?.state === 3 && rollCountdown === 0 && !fastRollTriggered && round?.roundId) {
+      setFastRollTriggered(true);
+      fetch(`${API_BASE_URL}/api/rounds/${round.roundId}/fast-roll`, { method: "POST" })
+        .then(() => loadRound())
+        .catch((e) => console.warn("Fast roll ping:", e.message));
+    }
+  }, [round?.state, rollCountdown, fastRollTriggered, round?.roundId]);
 
   // Continuous live sync across all states (every 2.5s, fast 1.5s during VRF roll)
   useEffect(() => {
@@ -102,14 +134,17 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
 
   // Confetti when user wins
   useEffect(() => {
-    if (round?.state === 4 && playerEntry?.revealed && playerEntry.selectedNumber === round.winningNumber) {
+    const userNum = playerEntry?.revealed && playerEntry.selectedNumber > 0
+      ? Number(playerEntry.selectedNumber)
+      : Number(activeSecretData?.selectedNumber || selectedNumber || 0);
+    if ((round?.state === 4 || round?.state === 6) && userNum > 0 && userNum === Number(round?.winningNumber)) {
       try {
         confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
       } catch (e) {
         // ignore
       }
     }
-  }, [round?.state, playerEntry?.revealed, playerEntry?.selectedNumber, round?.winningNumber]);
+  }, [round?.state, playerEntry?.revealed, playerEntry?.selectedNumber, activeSecretData?.selectedNumber, selectedNumber, round?.winningNumber]);
 
   // Trigger Duel Ready popup when both players are locked in (playerCount >= maxPlayers)
   useEffect(() => {
@@ -120,17 +155,15 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
 
   // Trigger Winner popup when round is in Result Ready state (4 or 6) and user is a winner
   useEffect(() => {
-    if (
-      round &&
-      (round.state === 4 || round.state === 6) &&
-      playerEntry &&
-      playerEntry.revealed &&
-      Number(playerEntry.selectedNumber) === round.winningNumber &&
-      !winnerModalDismissed
-    ) {
-      setShowWinnerModal(true);
+    if (round && (round.state === 4 || round.state === 6) && !winnerModalDismissed) {
+      const userNum = playerEntry?.revealed && playerEntry.selectedNumber > 0
+        ? Number(playerEntry.selectedNumber)
+        : Number(activeSecretData?.selectedNumber || selectedNumber || 0);
+      if (userNum > 0 && userNum === Number(round.winningNumber)) {
+        setShowWinnerModal(true);
+      }
     }
-  }, [round?.state, round?.winningNumber, playerEntry?.revealed, playerEntry?.selectedNumber, winnerModalDismissed]);
+  }, [round?.state, round?.winningNumber, playerEntry?.revealed, playerEntry?.selectedNumber, activeSecretData?.selectedNumber, selectedNumber, winnerModalDismissed]);
 
   // Fetch Round Data (Instant backend API + On-chain sync)
   const loadRound = async () => {
@@ -1376,6 +1409,26 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                 </div>
               </div>
 
+              {/* High-Impact 15-Second Animated Roll Countdown */}
+              <div className="p-4 rounded-2xl bg-purple-950/60 border border-purple-500/50 max-w-sm mx-auto space-y-2.5 shadow-[0_0_25px_rgba(168,85,247,0.25)]">
+                <div className="flex items-center justify-between text-xs font-mono">
+                  <span className="text-gray-300 flex items-center gap-1.5 font-bold">
+                    <Clock className="w-4 h-4 text-purple-400 animate-spin" />
+                    <span>Estimated Settlement:</span>
+                  </span>
+                  <span className="text-gold font-black text-sm">
+                    00:{rollCountdown.toString().padStart(2, '0')}s
+                  </span>
+                </div>
+                {/* Visual Progress Bar */}
+                <div className="w-full bg-gray-800/80 rounded-full h-2 overflow-hidden border border-purple-500/30">
+                  <div
+                    className="bg-gradient-to-r from-purple-500 via-pink-500 to-gold h-full transition-all duration-1000 ease-linear rounded-full"
+                    style={{ width: `${Math.max(8, ((15 - rollCountdown) / 15) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
               {/* Live Fighters & Pending Roll Board */}
               <div className="p-4 sm:p-5 rounded-2xl bg-arena-surface border border-purple-500/30 max-w-lg mx-auto text-left space-y-3 shadow-[0_0_20px_rgba(168,85,247,0.15)]">
                 <div className="flex items-center justify-between text-xs font-bold font-heading text-gray-300 uppercase tracking-wider pb-2 border-b border-arena-border">
@@ -1387,6 +1440,21 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                   {(roundPlayers || []).map((p, i) => {
                     const isUser = account && p?.address && p.address.toLowerCase() === account.toLowerCase();
                     const addrShort = p?.address ? `${p.address.slice(0, 6)}...${p.address.slice(-4)}` : `Fighter #${i + 1}`;
+                    
+                    let chosenNum = (p?.revealed && p.selectedNumber > 0) ? p.selectedNumber : null;
+                    if (!chosenNum && p?.address) {
+                      try {
+                        const localSec = localStorage.getItem(`diceclash_${round.roundId}_${p.address.toLowerCase()}`);
+                        if (localSec) {
+                          const parsed = JSON.parse(localSec);
+                          if (parsed.selectedNumber) chosenNum = parsed.selectedNumber;
+                        }
+                      } catch (e) {}
+                    }
+                    if (!chosenNum && isUser && selectedNumber) {
+                      chosenNum = selectedNumber;
+                    }
+
                     return (
                       <div key={p?.address || i} className="p-2.5 rounded-xl bg-arena-card/80 border border-arena-border flex items-center justify-between text-xs font-mono">
                         <div className="flex items-center gap-2">
@@ -1396,7 +1464,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                         <div className="flex items-center gap-1.5">
                           <span className="text-gray-400">Locked Choice:</span>
                           <span className="font-bold text-gold px-2 py-0.5 rounded bg-gold/10 border border-gold/30">
-                            {p?.revealed ? `Dice #${p.selectedNumber}` : "Revealing..."}
+                            {chosenNum ? `Dice #${chosenNum}` : (p?.revealed ? `Dice #${p.selectedNumber}` : "Dice #?")}
                           </span>
                         </div>
                       </div>
@@ -1437,7 +1505,22 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                 <div className="space-y-2">
                   {(roundPlayers || []).map((p, i) => {
                     const isUser = account && p?.address && p.address.toLowerCase() === account.toLowerCase();
-                    const matched = p?.revealed && Number(p?.selectedNumber) === round.winningNumber;
+                    
+                    let chosenNum = (p?.revealed && p.selectedNumber > 0) ? p.selectedNumber : null;
+                    if (!chosenNum && p?.address) {
+                      try {
+                        const localSec = localStorage.getItem(`diceclash_${round.roundId}_${p.address.toLowerCase()}`);
+                        if (localSec) {
+                          const parsed = JSON.parse(localSec);
+                          if (parsed.selectedNumber) chosenNum = parsed.selectedNumber;
+                        }
+                      } catch (e) {}
+                    }
+                    if (!chosenNum && isUser && selectedNumber) {
+                      chosenNum = selectedNumber;
+                    }
+
+                    const matched = (chosenNum && Number(chosenNum) === round.winningNumber) || (p?.revealed && Number(p?.selectedNumber) === round.winningNumber);
                     const addrFormatted = p?.address ? `${p.address.slice(0, 6)}...${p.address.slice(-4)}` : `Fighter #${i + 1}`;
                     return (
                       <div
@@ -1454,7 +1537,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                         </div>
                         <div className="flex items-center gap-2">
                           <span>
-                            {p?.revealed ? `Selected: #${p.selectedNumber}` : "Did Not Reveal"}
+                            {chosenNum ? `Selected: #${chosenNum}` : (p?.revealed ? `Selected: #${p.selectedNumber}` : "Did Not Reveal")}
                           </span>
                           {matched ? (
                             <span className="px-2 py-0.5 rounded-full bg-gold text-gray-950 font-black flex items-center gap-1 text-[11px]">
@@ -1722,7 +1805,24 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
             }
 
             const isCurrentUser = account && p?.address && p.address.toLowerCase() === account.toLowerCase();
-            const isWinner = (round.state === 4 || round.state === 6) && p?.revealed && Number(p?.selectedNumber) === round.winningNumber;
+            let chosenNum = (p?.revealed && p.selectedNumber > 0) ? p.selectedNumber : null;
+            if (!chosenNum && p?.address) {
+              try {
+                const localSec = localStorage.getItem(`diceclash_${round.roundId}_${p.address.toLowerCase()}`);
+                if (localSec) {
+                  const parsed = JSON.parse(localSec);
+                  if (parsed.selectedNumber) chosenNum = parsed.selectedNumber;
+                }
+              } catch (e) {}
+            }
+            if (!chosenNum && isCurrentUser && (activeSecretData?.selectedNumber || selectedNumber)) {
+              chosenNum = activeSecretData?.selectedNumber || selectedNumber;
+            }
+
+            const isWinner = (round.state === 4 || round.state === 6) && (
+              (p?.revealed && Number(p?.selectedNumber) === round.winningNumber) ||
+              (chosenNum && Number(chosenNum) === round.winningNumber)
+            );
             const addrFormatted = p?.address ? `${p.address.slice(0, 6)}...${p.address.slice(-4)}` : `Fighter #${idx + 1}`;
 
             return (
@@ -1758,8 +1858,18 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                   <span className="text-gray-400 text-[11px]">Selected Dice:</span>
                   <span className="font-heading font-black">
                     {round.state === 0 ? (
-                      <span className="text-gray-400 text-[11px] flex items-center gap-1">
-                        <Lock className="w-3 h-3 text-gold" /> Hidden Hash
+                      isCurrentUser && chosenNum ? (
+                        <span className="text-gold text-xs flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-gold" /> #{chosenNum} (Your Secret)
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-[11px] flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-gold" /> Hidden Hash
+                        </span>
+                      )
+                    ) : chosenNum ? (
+                      <span className={`text-base flex items-center gap-1 ${isWinner ? "text-gold font-black scale-110" : "text-white"}`}>
+                        🎲 #{chosenNum}
                       </span>
                     ) : p?.revealed ? (
                       <span className={`text-base flex items-center gap-1 ${isWinner ? "text-gold font-black scale-110" : "text-white"}`}>
@@ -1972,7 +2082,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
               </div>
               <div className="flex justify-between items-center pb-1.5 border-b border-arena-border/50">
                 <span className="text-gray-400">Your Selected Number:</span>
-                <span className="text-emerald-400 font-bold text-sm">🎲 #{playerEntry?.selectedNumber}</span>
+                <span className="text-emerald-400 font-bold text-sm">🎲 #{playerEntry?.selectedNumber || activeSecretData?.selectedNumber || selectedNumber}</span>
               </div>
               <div className="flex justify-between items-center pb-1.5 border-b border-arena-border/50">
                 <span className="text-gray-400">Total Bounty Pool:</span>
