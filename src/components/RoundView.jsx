@@ -217,6 +217,34 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
           vrfRequestId: r.vrfRequestId.toString()
         });
 
+        // Direct on-chain fetch for round players to guarantee 100% synchronization even if backend indexer has latency
+        try {
+          const playerAddrs = await diceContract.getRoundPlayers(roundId);
+          if (playerAddrs && playerAddrs.length > 0) {
+            const playersDetails = await Promise.all(
+              playerAddrs.map(async (addr) => {
+                try {
+                  const pe = await diceContract.getPlayerEntry(roundId, addr);
+                  return {
+                    address: addr,
+                    commitment: pe.commitment,
+                    amount: pe.amount.toString(),
+                    selectedNumber: Number(pe.selectedNumber),
+                    revealed: pe.revealed,
+                    claimed: pe.claimed,
+                    refunded: pe.refunded
+                  };
+                } catch {
+                  return { address: addr, selectedNumber: 0, revealed: false };
+                }
+              })
+            );
+            setRoundPlayers(playersDetails);
+          }
+        } catch (pErr) {
+          console.warn("Could not load round players from contract:", pErr.message);
+        }
+
         // Check player entry
         if (account) {
           const entry = await diceContract.getPlayerEntry(roundId, account);
@@ -891,10 +919,21 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
           {/* 3D Dice Visual */}
           <div className="py-4">
             <Dice3D
-              result={(round.state === 4 || round.state === 5 || round.state === 6) ? round.winningNumber : (playerEntry?.revealed ? playerEntry.selectedNumber : selectedNumber)}
+              result={
+                (round.state === 4 || round.state === 5 || round.state === 6)
+                  ? round.winningNumber
+                  : round.state === 3
+                  ? null
+                  : (playerEntry?.revealed ? playerEntry.selectedNumber : selectedNumber)
+              }
               isRolling={round.state === 3}
               size="lg"
             />
+            {round.state === 3 && (
+              <div className="mt-2 text-xs font-mono text-purple-300 bg-purple-950/40 py-1 px-3 rounded-full border border-purple-500/30 inline-block animate-pulse">
+                🎲 Rolling... Securing Random Number (1 - 6)
+              </div>
+            )}
           </div>
 
           {/* Prize Pool & Stake Banner */}
@@ -1317,14 +1356,59 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
 
           {/* STATE 3: RANDOMNESS PENDING */}
           {round.state === 3 && (
-            <div className="py-10 text-center space-y-4">
-              <RefreshCw className="w-10 h-10 text-gold animate-spin mx-auto" />
-              <h4 className="font-heading text-2xl font-bold text-white">Securing the Roll...</h4>
-              <p className="text-xs text-gray-400 max-w-sm mx-auto">
-                Chainlink Verifiable Random Function (VRF) is generating an unbiasable random word on-chain.
-              </p>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 text-xs font-mono">
-                VRF Request #{round.vrfRequestId}
+            <div className="py-8 px-2 text-center space-y-6">
+              <div className="relative inline-block">
+                <div className="w-16 h-16 rounded-3xl bg-purple-500/20 text-purple-300 flex items-center justify-center mx-auto border border-purple-500/40 shadow-[0_0_30px_rgba(168,85,247,0.4)]">
+                  <Dices className="w-9 h-9 animate-spin text-purple-300" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <h4 className="font-heading text-2xl sm:text-3xl font-black text-white tracking-wide">
+                  🎲 3D DICE IS ROLLING ON-CHAIN...
+                </h4>
+                <p className="text-xs sm:text-sm text-purple-300 max-w-md mx-auto leading-relaxed">
+                  Chainlink Verifiable Random Function (VRF) is generating a provably fair, unbiasable random dice roll (1 - 6).
+                </p>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 text-[11px] font-mono">
+                  <span>VRF Request ID:</span>
+                  <span className="truncate max-w-[200px]">{round.vrfRequestId}</span>
+                </div>
+              </div>
+
+              {/* Live Fighters & Pending Roll Board */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-arena-surface border border-purple-500/30 max-w-lg mx-auto text-left space-y-3 shadow-[0_0_20px_rgba(168,85,247,0.15)]">
+                <div className="flex items-center justify-between text-xs font-bold font-heading text-gray-300 uppercase tracking-wider pb-2 border-b border-arena-border">
+                  <span>⚔️ Duel Fighter Picks:</span>
+                  <span className="text-gold font-mono">Prize Pool: {poolFormatted}</span>
+                </div>
+
+                <div className="space-y-2">
+                  {(roundPlayers || []).map((p, i) => {
+                    const isUser = account && p?.address && p.address.toLowerCase() === account.toLowerCase();
+                    const addrShort = p?.address ? `${p.address.slice(0, 6)}...${p.address.slice(-4)}` : `Fighter #${i + 1}`;
+                    return (
+                      <div key={p?.address || i} className="p-2.5 rounded-xl bg-arena-card/80 border border-arena-border flex items-center justify-between text-xs font-mono">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white">{addrShort}</span>
+                          {isUser && <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40">YOU</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-gray-400">Locked Choice:</span>
+                          <span className="font-bold text-gold px-2 py-0.5 rounded bg-gold/10 border border-gold/30">
+                            {p?.revealed ? `Dice #${p.selectedNumber}` : "Revealing..."}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-2 text-center border-t border-arena-border/50">
+                  <p className="text-[11px] text-gray-400">
+                    ⚡ Dice result generate hote hi screen par winning number show hoga aur match hone wale winner ko reward auto-transfer ho jayega!
+                  </p>
+                </div>
               </div>
             </div>
           )}
