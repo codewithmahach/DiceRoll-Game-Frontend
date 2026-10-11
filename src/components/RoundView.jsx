@@ -32,6 +32,8 @@ import { API_BASE_URL } from '../config/api';
 export default function RoundView({ roundId, onBack, initialNumber = null }) {
   const {
     account,
+    signer,
+    provider,
     connectWallet,
     isConnecting,
     diceContract,
