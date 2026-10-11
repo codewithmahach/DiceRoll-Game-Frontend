@@ -335,6 +335,24 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
         commitment
       });
 
+      // Pre-flight validation
+      if (round.state !== 0) {
+        setErrorMsg("This arena is no longer in the open joining phase.");
+        return;
+      }
+      if (isJoinExpired) {
+        setErrorMsg("The joining window for this arena has expired (00:00). Please create or join a new match.");
+        return;
+      }
+      if (isETH) {
+        const balBN = ethers.parseEther(ethBalance || "0");
+        const entryBN = BigInt(round.entryAmount);
+        if (balBN < entryBN) {
+          setErrorMsg(`Insufficient ETH in wallet. Required: ${entryFormatted}, Available: ${ethBalance} ETH.`);
+          return;
+        }
+      }
+
       // 4. Handle token payment and submit commit
       if (isETH) {
         setTxPending(true);
@@ -464,6 +482,45 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
       await tx.wait();
 
       setSuccessMsg(`Full refund of ${entryFormatted} returned to your wallet!`);
+      await refreshBalances();
+      await loadRound();
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(parseContractError(err));
+    } finally {
+      setLoading(false);
+      setTxPending(false);
+    }
+  };
+
+  // Cancel Expired Match & Claim Full 100% Refund Action
+  const handleCancelAndRefund = async () => {
+    if (!account) {
+      await connectWallet();
+      return;
+    }
+    if (!diceContract) {
+      setErrorMsg("Please connect your MetaMask wallet on Sepolia.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setErrorMsg("");
+      setSuccessMsg("");
+      setTxPending(true);
+
+      // 1. If round is still in OPEN state (0), lockRound cancels it on-chain
+      if (round.state === 0) {
+        const txLock = await diceContract.lockRound(round.roundId);
+        await txLock.wait();
+      }
+
+      // 2. Claim full 100% refund
+      const txRefund = await diceContract.claimRefund(round.roundId);
+      await txRefund.wait();
+
+      setSuccessMsg(`Match cancelled! Full refund of ${entryFormatted} has been returned to your wallet!`);
       await refreshBalances();
       await loadRound();
     } catch (err) {
@@ -947,8 +1004,44 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                     </div>
                   )}
                 </>
+              ) : isJoinExpired && round.playerCount < round.minPlayers ? (
+                /* Player Committed but Match Timed Out before Player 2 arrived */
+                <div className="p-6 rounded-3xl bg-amber-500/15 border-2 border-amber-500/50 text-center space-y-4 shadow-[0_0_30px_rgba(245,158,11,0.25)]">
+                  <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto border border-amber-500/40">
+                    <Clock className="w-8 h-8 text-amber-400" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-amber-400 block mb-1">
+                      LOBBY TIMED OUT • NO OPPONENT JOINED
+                    </span>
+                    <h5 className="font-heading text-xl font-black text-white">Match Window Expired</h5>
+                    <p className="text-xs text-gray-300 max-w-sm mx-auto mt-1 leading-relaxed">
+                      The join timer for Round #{round.roundId} expired before Fighter 2 joined. You can cancel this match now and claim your full 100% refund ({entryFormatted}) back to your wallet.
+                    </p>
+                  </div>
+
+                  {playerEntry?.refunded ? (
+                    <div className="p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs font-mono text-emerald-400 font-bold flex items-center justify-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-400" />
+                      <span>✓ 100% Refund of {entryFormatted} Claimed to Wallet!</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleCancelAndRefund}
+                      disabled={loading || txPending}
+                      className="gold-gradient-btn w-full py-3.5 rounded-xl font-heading text-sm font-black uppercase tracking-wider text-gray-950 shadow-[0_0_25px_rgba(245,158,11,0.5)] hover:scale-[1.01]"
+                    >
+                      {txPending ? (
+                        <span>Processing On-Chain Refund...</span>
+                      ) : (
+                        <span>🔄 Cancel Match & Claim 100% Refund ({entryFormatted}) ➜</span>
+                      )}
+                    </button>
+                  )}
+                </div>
               ) : (
-                /* Player Already Committed */
+                /* Player Already Committed (Waiting for Opponent) */
                 <div className="p-6 rounded-3xl bg-gradient-to-br from-emerald-950/60 via-arena-surface to-emerald-950/40 border-2 border-emerald-500/50 text-center space-y-4 shadow-[0_0_30px_rgba(16,185,129,0.2)]">
                   <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/40 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
                     <Check className="w-8 h-8 text-emerald-400" />
@@ -959,7 +1052,7 @@ export default function RoundView({ roundId, onBack, initialNumber = null }) {
                     </span>
                     <h5 className="font-heading text-xl font-black text-white">Your Selection Is Locked!</h5>
                     <p className="text-xs text-gray-300 max-w-sm mx-auto mt-1">
-                      You are entered in Round #{round.roundId}. When {round.maxPlayers} fighters join or the join timer reaches 00:00, the match will automatically progress to reveal and 3D dice roll!
+                      You are entered in Round #{round.roundId}. When {round.maxPlayers} fighters join, the match will automatically progress to reveal and 3D dice roll!
                     </p>
                   </div>
 

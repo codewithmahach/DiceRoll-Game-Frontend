@@ -280,7 +280,12 @@ export function Web3Provider({ children }) {
     if (rawMsg.includes("RevealPeriodActive")) return "Reveal period is still in progress.";
     if (rawMsg.includes("AlreadyClaimed")) return "You have already claimed this reward.";
     if (rawMsg.includes("NotAWinningPlayer")) return "Your revealed number did not match the winning roll.";
-    if (rawMsg.includes("insufficient funds")) return "Insufficient wallet funds for stake and network gas.";
+    if (rawMsg.includes("missing revert data") || rawMsg.includes("CALL_EXCEPTION") || errString.includes("missing revert data")) {
+      return "Transaction reverted by smart contract. The match timer may have expired or criteria not met.";
+    }
+    if (rawMsg.includes("insufficient funds") || errString.includes("insufficient funds")) {
+      return "Insufficient wallet funds for stake and network gas fees.";
+    }
 
     if (err?.reason) return err.reason;
     if (err?.shortMessage) return err.shortMessage;

@@ -21,7 +21,7 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
   const [usdtAmount, setUsdtAmount] = useState("25");
   const [minPlayers, setMinPlayers] = useState(2);
   const [maxPlayers, setMaxPlayers] = useState(2);
-  const [durationMinutes, setDurationMinutes] = useState(10);
+  const [durationMinutes, setDurationMinutes] = useState(1440);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -185,23 +185,24 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated, defa
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs text-gray-400 font-semibold uppercase font-mono">Join Timer</label>
+            <label className="text-xs text-gray-400 font-semibold uppercase font-mono">Lobby Expiration Time</label>
             <select
               value={durationMinutes}
               onChange={(e) => setDurationMinutes(Number(e.target.value))}
               className="w-full bg-arena-surface border border-arena-border rounded-xl p-2.5 text-xs font-mono text-white focus:outline-none focus:border-crimson"
             >
-              <option value={10}>10 Mins (Recommended)</option>
-              <option value={5}>5 Mins</option>
-              <option value={15}>15 Mins</option>
+              <option value={1440}>24 Hours (Open Lobby — Recommended)</option>
+              <option value={720}>12 Hours</option>
+              <option value={120}>2 Hours</option>
+              <option value={60}>1 Hour</option>
               <option value={30}>30 Mins</option>
-              <option value={60}>60 Mins (1 Hour)</option>
+              <option value={10}>10 Mins (Fast Match)</option>
             </select>
           </div>
         </div>
 
         <p className="text-[11px] text-gray-400 mb-5 font-mono">
-          ⚡ If minimum fighters join, the match can start immediately once the Join Timer reaches 00:00.
+          ⚡ 1v1 match starts immediately the instant Player 2 joins. The lobby stays open for 24 hours so your opponent has plenty of time to join without timing out.
         </p>
 
         {/* Feature Checkmarks */}
